@@ -1,0 +1,50 @@
+# Gradle и сборка
+.gradle/
+.gradle-local/
+build/
+out/
+build_*.txt
+build-output*.txt
+
+# Тяжёлые необязательные данные (для сборки не нужны)
+bundled-mods/
+ltest/
+
+# Временные файлы агента (клон старого репозитория и т.п.)
+/.tmp/
+
+# Кэш Fabric Loom
+.fabric/
+
+# Логи и временные файлы запуска Майнкрафта при тестах
+/run/
+/run_client/
+/run_server/
+*.log
+logs/
+
+# IntelliJ IDEA
+.idea/
+*.iml
+*.ipr
+*.iws
+.idea_modules/
+
+# Eclipse (если вдруг решишь использовать или кто-то из друзей сидит на ней)
+.metadata/
+.classpath
+.project
+.settings/
+.factorypath
+
+# Файлы операционной системы
+.DS_Store
+Thumbs.db
+
+# Локальные настройки (если будешь использовать секреты/токены)
+local.properties
+
+# Тяжелые архивы Gradle
+gradle-9.5.1-bin.zip
+
+/tools/

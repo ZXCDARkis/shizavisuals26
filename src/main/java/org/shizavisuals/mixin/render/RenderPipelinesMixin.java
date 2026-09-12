@@ -1,0 +1,75 @@
+package org.shizavisuals.mixin.render;
+
+import com.mojang.blaze3d.pipeline.RenderPipeline;
+import net.minecraft.client.renderer.RenderPipelines;
+import org.shizavisuals.utils.render.gui.GuiPipelines;
+import org.shizavisuals.utils.render.particles.ProceduralParticleRenderer;
+import org.shizavisuals.utils.render.post.PostPipelines;
+import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Shadow;
+import org.spongepowered.asm.mixin.injection.At;
+import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+
+@Mixin(RenderPipelines.class)
+public abstract class RenderPipelinesMixin {
+    @Shadow
+    private static RenderPipeline register(RenderPipeline renderPipeline) {
+        throw new AssertionError();
+    }
+
+    @Inject(method = "<clinit>", at = @At("TAIL"))
+    private static void registerGuiPipelines(CallbackInfo ci) {
+        register(GuiPipelines.RECT);
+        register(GuiPipelines.TEXT);
+        register(GuiPipelines.TEXTURE);
+        register(GuiPipelines.GLASS_SHADOW);
+        register(GuiPipelines.BLUR_RECT);
+        register(GuiPipelines.COLOR_GRID);
+        register(GuiPipelines.MENU_BACKGROUND);
+        register(GuiPipelines.GUI_BLUR_DOWN);
+        register(GuiPipelines.GUI_BLUR_UP);
+        for (RenderPipeline pipeline : GuiPipelines.itemDownscaleVariants()) {
+            register(pipeline);
+        }
+        register(PostPipelines.ESP_KAWASE_DOWN);
+        register(PostPipelines.ESP_KAWASE_UP);
+        register(ProceduralParticleRenderer.pipeline());
+        register(PostPipelines.HAND_PLASMA);
+        register(PostPipelines.POINT_LIGHTS);
+        register(PostPipelines.BLOCK_OUTLINE_CLASSIC);
+        register(PostPipelines.BLOCK_OUTLINE_CLASSIC_THROUGH);
+        register(PostPipelines.BLOCK_OUTLINE_CAUSTICS);
+        register(PostPipelines.BLOCK_OUTLINE_CAUSTICS_THROUGH);
+        register(PostPipelines.BLOCK_OUTLINE_PRISMATIC);
+        register(PostPipelines.BLOCK_OUTLINE_PRISMATIC_THROUGH);
+        register(PostPipelines.BLOCK_OUTLINE_GLOSSY);
+        register(PostPipelines.BLOCK_OUTLINE_GLOSSY_THROUGH);
+        register(PostPipelines.BLOCK_OUTLINE_DEEP_SPACE);
+        register(PostPipelines.BLOCK_OUTLINE_DEEP_SPACE_THROUGH);
+        register(PostPipelines.BLOCK_OUTLINE_NEBULA);
+        register(PostPipelines.BLOCK_OUTLINE_NEBULA_THROUGH);
+        register(PostPipelines.WORLD_SKY_CLOUDS_DEEP_SPACE);
+        register(PostPipelines.WORLD_SKY_CLOUDS_NEBULA);
+        register(PostPipelines.WORLD_SKY_CLOUDS_PLASMA);
+        register(PostPipelines.WORLD_SKY_DEEP_SPACE);
+        register(PostPipelines.WORLD_SKY_NEBULA);
+        register(PostPipelines.WORLD_SKY_PLASMA);
+        register(PostPipelines.WORLD_SATURATION);
+        register(PostPipelines.CHAMS_SOLID);
+        register(PostPipelines.CHAMS_PLASMA);
+        register(PostPipelines.CHAMS_NEBULA);
+        register(PostPipelines.CHAMS_GLASS);
+        register(PostPipelines.CHAMS_OUTLINE);
+        register(PostPipelines.CHAMS_INTERNAL);
+        register(PostPipelines.CHAMS_GLOW);
+        register(PostPipelines.CHAMS_GLOW_ADDITIVE);
+        register(PostPipelines.POPCHAMS_ADDITIVE);
+        register(PostPipelines.POPCHAMS_ADDITIVE_SOLID);
+        register(PostPipelines.POPCHAMS_TRANSLUCENT);
+        register(PostPipelines.POPCHAMS_TRANSLUCENT_SOLID);
+        register(PostPipelines.POPCHAMS_MASK);
+        register(PostPipelines.POPCHAMS_MASK_SOLID);
+        register(PostPipelines.POPCHAMS_COMPOSITE);
+    }
+}
