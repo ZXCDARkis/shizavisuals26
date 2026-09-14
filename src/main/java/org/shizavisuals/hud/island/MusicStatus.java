@@ -73,6 +73,16 @@ public class MusicStatus extends ExtandableStatus {
     private float tickerPrevScroll;
     private int tickerLineIndex = -1;
     private String tickerTrackKey = "";
+    // Дебаунс смены строки лирики (мс): позиция между нативными репортами
+    // интерполируется и дрожит у границы строк.
+    private static final long LYRIC_SWITCH_DEBOUNCE_MS = 250L;
+    // Холд караоке-режима после конца строки (мс): гасит мигание
+    // "строка <-> название" на границе lineSingEndMs.
+    private static final long KARAOKE_HOLD_MS = 400L;
+    private int tickerPendingIndex = -2;
+    private long tickerPendingSince;
+    private String debounceTrackKey = "";
+    private long karaokeHoldUntil;
 
     public MusicStatus(DynamicIsland island) {
         super(island, "music");
@@ -380,7 +390,8 @@ public class MusicStatus extends ExtandableStatus {
                         }
                         Identifier removed = artCache.remove(eldest);
                         artContentHash.remove(eldest);
-                        if (removed != null && !removed.equals(id)) {
+                        // Не выселяем текстуру, которая прямо сейчас на экране.
+                        if (removed != null && !removed.equals(id) && !removed.equals(currentArtTexture)) {
                             try {
                                 mc.getTextureManager().release(removed);
                             } catch (Throwable ignored) {
@@ -740,11 +751,46 @@ public class MusicStatus extends ExtandableStatus {
 
         LyricsData lyr = lyrics;
         boolean hasLyrics = lyr.matches(snap.title + "|" + snap.artist) && lyr.lines().length > 0;
-        int lyricIndex = hasLyrics ? lyr.indexAt(posMs) : -1;
+        int rawIndex = hasLyrics ? lyr.indexAt(posMs) : -1;
+        long nowMs = System.currentTimeMillis();
+        // Дебаунс смены строки: позиция между нативными репортами
+        // интерполируется и дрожит у границы строк — без выдержки тикер
+        // перескакивал бы туда-сюда и перезапускал swap-анимацию (мигание).
+        // Прыжок дальше чем на 2 строки — реальный сик, переключаем сразу.
+        if (hasLyrics && !lyr.trackKey().equals(this.debounceTrackKey)) {
+            this.debounceTrackKey = lyr.trackKey();
+            this.tickerPendingIndex = -2;
+        }
+        if (rawIndex != this.tickerLineIndex) {
+            boolean seekJump = this.tickerLineIndex >= 0 && Math.abs(rawIndex - this.tickerLineIndex) > 2;
+            // Текстов нет (смена трека, лирика ещё летит) — гасим сразу,
+            // держать чужую строку под новый трек нельзя.
+            if (seekJump || !hasLyrics) {
+                this.tickerPendingIndex = -2;
+            } else {
+                if (this.tickerPendingIndex != rawIndex) {
+                    this.tickerPendingIndex = rawIndex;
+                    this.tickerPendingSince = nowMs;
+                }
+                if (nowMs - this.tickerPendingSince < LYRIC_SWITCH_DEBOUNCE_MS) {
+                    rawIndex = this.tickerLineIndex;
+                } else {
+                    this.tickerPendingIndex = -2;
+                }
+            }
+        } else {
+            this.tickerPendingIndex = -2;
+        }
+        int lyricIndex = rawIndex;
         String lyricLine = lyricIndex >= 0 ? lyr.lines()[lyricIndex] : null;
         boolean lineStillActive = lyricIndex >= 0 && posMs < Math.min(
                 lyricIndex + 1 < lyr.timesMs().length ? lyr.timesMs()[lyricIndex + 1] : Long.MAX_VALUE,
                 lineSingEndMs(lyr, lyricIndex) + 2500L);
+        // Холд караоке: после конца строки держим её ещё чуть-чуть,
+        // иначе дрожание позиции на границе дёргает "строка <-> название".
+        if (lineStillActive) {
+            this.karaokeHoldUntil = nowMs + KARAOKE_HOLD_MS;
+        }
         // One font family for the title, the ticker and every lyric row —
         // choosing a font per line mixes typefaces when lines mix languages.
         MsdfFont titleFont = UiFonts.getFontForText(snap.title, UiFontStyle.MEDIUM.weight());
@@ -755,7 +801,8 @@ public class MusicStatus extends ExtandableStatus {
         // on it made the island stick on one line (or drop the text entirely)
         // every time the user rewound. When truly paused the position simply
         // holds the current line, which is correct karaoke behaviour.
-        boolean karaoke = !extended && hasLyrics && lineStillActive
+        boolean karaoke = !extended && hasLyrics
+                && (lineStillActive || nowMs < this.karaokeHoldUntil)
                 && lyricLine != null && !lyricLine.isBlank();
         // The collapsed island never tries to fit the whole lyric line: long lines
         // live in a fixed-width window (like the reference client) and scroll as
@@ -773,13 +820,19 @@ public class MusicStatus extends ExtandableStatus {
         float imageSize = 7.0F + 19.0F * extending;
         float imageY = y + (extended ? imageMargin * s : (island.size().height * s - imageSize * s) / 2.0F);
         Identifier artTex = currentArtTexture;
-        Render2DUtil.texture(
+        // Динамическая обложка зарегистрирована в TextureManager в рантайме —
+        // её нельзя отдавать статическому GuiTexture-пайплайну (он ищет файл
+        // в ресурс-паках и крашит кадр FileNotFoundException), только managed.
+        var artBuilder = Render2DUtil.texture(
                         x + (imageMargin - 10.0F + 10.0F * anim) * s,
                         imageY,
                         imageSize * s, imageSize * s,
                         artTex != null ? artTex : NO_IMAGE)
-                .radius((1.0F + 5.0F * extending) * s)
-                .draw();
+                .radius((1.0F + 5.0F * extending) * s);
+        if (artTex != null) {
+            artBuilder.managed();
+        }
+        artBuilder.draw();
 
         float textX = x + (-5.0F + 20.0F * anim + 29.0F * extending) * s;
         // The title slides down to its own row when the island expands; in the

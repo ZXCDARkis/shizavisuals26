@@ -61,6 +61,11 @@ public final class TargetElement extends HudElement {
         this.target = resolveTarget(mc);
         if (this.target != null) {
             this.fadeEntity = this.target;
+        } else if (this.fadeEntity != null && !TargetSelector.isDisplayTarget(mc, this.fadeEntity)) {
+            // Цель умерла, ушла в инвиз или дальше 3 блоков — гасим сразу,
+            // без анимации затухания (она только для потери прицела).
+            this.fadeEntity = null;
+            this.fadeAlpha = 0.0F;
         }
         updateFade();
 
@@ -266,6 +271,10 @@ public final class TargetElement extends HudElement {
         if (current == null && showcase(mc)) {
             current = mc.player;
         }
-        return current != null && current.isAlive() ? current : null;
+        if (current == null || !current.isAlive()) {
+            return null;
+        }
+        // Только ближние видимые цели: дальше 3 блоков и невидимки не показываются.
+        return TargetSelector.isDisplayTarget(mc, current) ? current : null;
     }
 }

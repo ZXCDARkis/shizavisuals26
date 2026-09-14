@@ -134,6 +134,8 @@ public final class TargetEsp extends Feature {
         if (living == null) return null;
         if (living.isRemoved() || !living.isAlive()) return null;
         if (living == mc.player && mc.options.getCameraType().isFirstPerson()) return null;
+        // Только ближние видимые цели: дальше 3 блоков и невидимки не подсвечиваются.
+        if (!TargetSelector.isDisplayTarget(mc, living)) return null;
         return living;
     }
 
@@ -192,6 +194,7 @@ public final class TargetEsp extends Feature {
                 && lingerTarget.isAlive()
                 && !lingerTarget.isRemoved()
                 && lingerTarget.level() == mc.level
+                && TargetSelector.isDisplayTarget(mc, lingerTarget)
                 && now - lastSeenTime < 3500L) {
             entity = lingerTarget;
             lingerFade = 1.0F - (now - lastSeenTime) / 3500.0F;

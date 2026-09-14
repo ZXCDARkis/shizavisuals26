@@ -26,6 +26,24 @@ public final class TargetSelector {
     private TargetSelector() {
     }
 
+    /** Максимальная дистанция цели для TargetHUD/TargetESP. */
+    public static final double DISPLAY_RANGE = 3.0D;
+
+    /**
+     * Фильтр отображения для TargetHUD/TargetESP: только ближние
+     * (в радиусе {@link #DISPLAY_RANGE} от игрока) и видимые цели.
+     * Невидимки (зелье/эффект) и дальние сущности отбрасываются.
+     */
+    public static boolean isDisplayTarget(Minecraft mc, LivingEntity living) {
+        if (mc == null || mc.player == null || living == null) {
+            return false;
+        }
+        if (living.isRemoved() || !living.isAlive() || living.isInvisible()) {
+            return false;
+        }
+        return mc.player.distanceTo(living) <= DISPLAY_RANGE;
+    }
+
     public static LivingEntity pick(Minecraft mc) {
         if (mc == null || mc.level == null || mc.player == null || mc.gameRenderer == null) {
             return null;
