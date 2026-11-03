@@ -70,7 +70,8 @@ public final class MenuConfigStore {
     public static void resetHudPositions() {
         save(data -> data.entrySet().removeIf(entry -> {
             String key = entry.getKey();
-            return key.startsWith("hud.") && (key.endsWith(".x") || key.endsWith(".y"));
+            return key.startsWith("hud.")
+                    && (key.endsWith(".x") || key.endsWith(".y") || key.endsWith(".scale"));
         }));
     }
 

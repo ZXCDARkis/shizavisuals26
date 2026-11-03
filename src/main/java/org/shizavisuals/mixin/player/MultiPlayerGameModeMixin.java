@@ -5,6 +5,7 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Player;
 import org.shizavisuals.context.MinecraftContext;
 import org.shizavisuals.feature.impl.visual.HitParticlesFeature;
+import org.shizavisuals.feature.impl.visual.SpiritsFeature;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -22,5 +23,6 @@ public abstract class MultiPlayerGameModeMixin {
         if (hitParticles != null) {
             hitParticles.onAttack(target);
         }
+        SpiritsFeature.handleAttack(target);
     }
 }

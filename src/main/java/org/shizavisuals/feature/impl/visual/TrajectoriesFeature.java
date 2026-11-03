@@ -87,7 +87,7 @@ public final class TrajectoriesFeature extends Feature implements MinecraftConte
     private int tpSkipTicks;
 
     public TrajectoriesFeature() {
-        super("Trajectories", "Predicts projectile paths and impact points", FeatureCategory.VISUAL, BindSetting.UNBOUND);
+        super("Trajectories", "Предсказывает траектории снарядов и точку падения", FeatureCategory.VISUAL, BindSetting.UNBOUND);
     }
 
     public static TrajectoriesFeature getEnabled() {

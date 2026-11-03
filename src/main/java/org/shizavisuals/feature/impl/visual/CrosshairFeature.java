@@ -107,7 +107,7 @@ public final class CrosshairFeature extends Feature {
     private long lastFrameNanos;
 
     public CrosshairFeature() {
-        super("Crosshair", "Procedural configurable crosshair", FeatureCategory.VISUAL, BindSetting.UNBOUND);
+        super("Crosshair", "Процедурный настраиваемый прицел", FeatureCategory.VISUAL, BindSetting.UNBOUND);
     }
 
     @EventTarget

@@ -4,6 +4,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.ChatScreen;
 import net.minecraft.resources.Identifier;
 import org.shizavisuals.context.MinecraftContext;
+import org.shizavisuals.context.RenderContext;
 import org.shizavisuals.event.EventTarget;
 import org.shizavisuals.event.events.input.MouseInputEvent;
 import org.shizavisuals.event.events.render.Render2DEvent;
@@ -79,6 +80,11 @@ public final class HudFeature extends Feature {
             this.dynamicIsland
     );
     private HudElement draggedElement;
+    /** Element whose resize grip is held; null when no resize is in progress. */
+    private HudElement resizedElement;
+    private float resizeStartX;
+    private float resizeStartY;
+    private float resizeStartPercent = 100.0F;
     private boolean sizeMigrationChecked;
     private float resetButtonX;
     private float resetButtonY;
@@ -91,7 +97,7 @@ public final class HudFeature extends Feature {
     }
 
     public HudFeature() {
-        super("HUD", "HUD customization settings", FeatureCategory.VISUAL, BindSetting.UNBOUND);
+        super("HUD", "Настройки кастомизации HUD", FeatureCategory.VISUAL, BindSetting.UNBOUND);
         instance = this;
     }
 
@@ -142,7 +148,28 @@ public final class HudFeature extends Feature {
         boolean chatOpen = mc.gui.screen() instanceof ChatScreen;
         boolean snapMode = chatOpen && controlDown(mc);
 
-        if (this.draggedElement != null) {
+        if (this.resizedElement != null) {
+            // SIGNED distance along the grip's own diagonal. Using the magnitude
+            // (sqrt) made both directions increase the size, so dragging inwards
+            // grew the element instead of shrinking it.
+            float dx = mouseX(mc) - this.resizeStartX;
+            float dy = mouseY(mc) - this.resizeStartY;
+            // The grip sits at the bottom-right corner, so "outward" (grow) is
+            // +x/+y and "inward" (shrink) is -x/-y.
+            float signed = (dx + dy) * 0.5F;
+            // Reference is the element's own diagonal half, so the sensitivity
+            // matches the size of the thing being resized at any zoom level.
+            float reference = Math.max(16.0F, (this.resizedElement.width() + this.resizedElement.height()) * 0.25F);
+            float percent = this.resizeStartPercent * (1.0F + signed / reference);
+            // Magnet at 100% (the default) plus integer steps: without this the
+            // drag almost never produced exactly 100% again.
+            if (Math.abs(percent - 100.0F) < 2.0F) {
+                percent = 100.0F;
+            } else {
+                percent = Math.max(50.0F, Math.min(200.0F, (float) Math.round(percent)));
+            }
+            this.resizedElement.previewScalePercent(percent);
+        } else if (this.draggedElement != null) {
             if (chatOpen) {
                 this.draggedElement.dragTo(mouseX(mc), mouseY(mc));
                 if (snapMode) {
@@ -157,17 +184,132 @@ public final class HudFeature extends Feature {
             clearSnapGuides();
         }
 
+        // A thrown panel must land ON a snap guide, not next to it: apply the
+        // same candidate search to the predicted resting position. Without this
+        // the inertia carries the element past the guides and it settles at an
+        // arbitrary offset, which looked like the snapping was broken.
+        // Landing spot is resolved ONCE per flight. Doing it every frame from the live
+        // position made the destination move with the panel, and the panel visibly
+        // twitched back towards its release point on long throws.
+        for (HudElement element : visible) {
+            if (element.needsRestTarget()) {
+                applySnapToRest(mc, visible, element);
+            }
+        }
+
         if (snapMode) {
             drawSnapGrid(mc);
         }
+
+        // A released HUD panel keeps gliding, so the edit overlay has to stay up
+        // for as long as anything is still in motion — otherwise the grid would
+        // vanish under the panel that is flying across it and the snap guides
+        // would flash off right when they matter.
+        boolean editing = chatOpen && (snapMode || this.draggedElement != null || gliding(mc, visible));
+
         for (HudElement element : visible) {
             element.render(mc, unit);
+        }
+        if (editing) {
+            drawResizeHandle(mc, unit, visible);
         }
         if (snapMode) {
             drawResetButton(mc, unit, visible);
         } else {
             this.resetButtonWidth = 0.0F;
             this.resetButtonHeight = 0.0F;
+        }
+    }
+
+    /** True while any element is still flying or settling from a throw. */
+    private static boolean gliding(Minecraft mc, List<HudElement> visible) {
+        return glidingElement(visible) != null;
+    }
+
+    private static HudElement glidingElement(List<HudElement> visible) {
+        for (HudElement element : visible) {
+            if (!element.isSettled()) {
+                return element;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Snaps the resting position of a flying panel. Uses the same candidate set
+     * as the drag snap so a throw behaves identically to a careful drag.
+     */
+    private void applySnapToRest(Minecraft mc, List<HudElement> visible, HudElement flying) {
+        float[] rest = new float[2];
+        flying.restPosition(mc.getWindow().getGuiScaledWidth(), mc.getWindow().getGuiScaledHeight(), rest);
+        float maxX = Math.max(0.0F, mc.getWindow().getGuiScaledWidth() - flying.width());
+        float maxY = Math.max(0.0F, mc.getWindow().getGuiScaledHeight() - flying.height());
+        // Guides are only meaningful while the user is looking at them; a
+        // backgrounded HUD panel should just land in bounds.
+        boolean showGuides = mc.gui.screen() instanceof net.minecraft.client.gui.screens.ChatScreen;
+        SnapCandidate snappedX = showGuides ? nearestSnap(rest[0], xCandidates(maxX, flying, visible)) : null;
+        SnapCandidate snappedY = showGuides ? nearestSnap(rest[1], yCandidates(maxY, flying, visible)) : null;
+        if (snappedX != null) {
+            rest[0] = snappedX.position();
+            this.activeGuideX = snappedX.guide();
+        }
+        if (snappedY != null) {
+            rest[1] = snappedY.position();
+            this.activeGuideY = snappedY.guide();
+        }
+        flying.targetRest(rest[0], rest[1]);
+    }
+
+    private static SnapCandidate nearestSnap(float position, List<SnapCandidate> candidates) {
+        SnapCandidate nearest = null;
+        float nearestDistance = SNAP_THRESHOLD;
+        for (SnapCandidate candidate : candidates) {
+            float distance = Math.abs(position - candidate.position());
+            if (distance <= nearestDistance) {
+                nearest = candidate;
+                nearestDistance = distance;
+            }
+        }
+        return nearest;
+    }
+
+    private List<SnapCandidate> xCandidates(float maxX, HudElement dragged, List<HudElement> visible) {
+        float screenWidth = maxX + dragged.width();
+        List<SnapCandidate> candidates = new ArrayList<>(24);
+        addCandidate(candidates, Math.min(SNAP_MARGIN, maxX), SNAP_MARGIN, maxX);
+        addCandidate(candidates, maxX / 2.0F, screenWidth / 2.0F, maxX);
+        addCandidate(candidates, Math.max(0.0F, maxX - SNAP_MARGIN), screenWidth - SNAP_MARGIN, maxX);
+        addEdgeCandidates(candidates, dragged, visible, maxX, true);
+        return candidates;
+    }
+
+    private List<SnapCandidate> yCandidates(float maxY, HudElement dragged, List<HudElement> visible) {
+        float screenHeight = maxY + dragged.height();
+        List<SnapCandidate> candidates = new ArrayList<>(24);
+        addCandidate(candidates, Math.min(SNAP_MARGIN, maxY), SNAP_MARGIN, maxY);
+        addCandidate(candidates, maxY / 2.0F, screenHeight / 2.0F, maxY);
+        addCandidate(candidates, Math.max(0.0F, maxY - SNAP_MARGIN), screenHeight - SNAP_MARGIN, maxY);
+        addEdgeCandidates(candidates, dragged, visible, maxY, false);
+        return candidates;
+    }
+
+    private void addEdgeCandidates(List<SnapCandidate> candidates, HudElement dragged,
+                                   List<HudElement> visible, float max, boolean horizontal) {
+        for (HudElement other : visible) {
+            if (other == dragged || other.width() <= 0.5F || other.height() <= 0.5F) {
+                continue;
+            }
+            float self = horizontal ? dragged.width() : dragged.height();
+            float otherStart = horizontal ? other.x() : other.y();
+            float otherSize = horizontal ? other.width() : other.height();
+            float otherEnd = otherStart + otherSize;
+            float otherCenter = otherStart + otherSize / 2.0F;
+
+            addCandidate(candidates, otherStart, otherStart, max);
+            addCandidate(candidates, otherEnd - self, otherEnd, max);
+            addCandidate(candidates, otherCenter - self / 2.0F, otherCenter, max);
+            addCandidate(candidates, otherStart - self - SNAP_GAP, otherStart - SNAP_GAP / 2.0F, max);
+            addCandidate(candidates, otherEnd + SNAP_GAP, otherEnd + SNAP_GAP / 2.0F, max);
         }
     }
 
@@ -178,6 +320,15 @@ public final class HudFeature extends Feature {
             return;
         }
         if (event.getAction() == GLFW.GLFW_RELEASE) {
+            if (this.resizedElement != null) {
+                // Only persist if the gesture actually changed anything: committing
+                // unconditionally rewrote the config on every grip click.
+                this.resizedElement.commitScale();
+                this.resizedElement.settleNow();
+                this.resizedElement = null;
+                event.cancel();
+                return;
+            }
             if (this.draggedElement != null) {
                 stopDrag(mc);
                 event.cancel();
@@ -190,6 +341,26 @@ public final class HudFeature extends Feature {
 
         float mouseX = mouseX(mc);
         float mouseY = mouseY(mc);
+
+        // Resize grip wins over dragging: it sits on top of the element corner,
+        // so without this the first click would grab and move the panel instead
+        // of scaling it.
+        if (this.handleSize > 0.0F && inside(mouseX, mouseY,
+                this.handleX - HANDLE_GRAB / 2.0F,
+                this.handleY - HANDLE_GRAB / 2.0F,
+                this.handleSize + HANDLE_GRAB,
+                this.handleSize + HANDLE_GRAB)) {
+            this.resizedElement = handleTarget(mc, visibleElements());
+            if (this.resizedElement != null) {
+                this.resizeStartX = mouseX;
+                this.resizeStartY = mouseY;
+                this.resizeStartPercent = this.resizedElement.scalePercent();
+                this.draggedElement = null;
+                event.cancel();
+                return;
+            }
+        }
+
         if (controlDown(mc) && inside(mouseX, mouseY,
                 this.resetButtonX,
                 this.resetButtonY,
@@ -278,12 +449,13 @@ public final class HudFeature extends Feature {
         this.activeGuideX = Float.NaN;
         this.activeGuideY = Float.NaN;
 
-        if (!dragged.isHorizontallyCentered()) {
-            SnapCandidate snappedX = nearestCandidate(x, xCandidates);
-            if (snappedX != null) {
-                x = snappedX.position();
-                this.activeGuideX = snappedX.guide();
-            }
+        // Snap on both axes for every element: the island and the hotbar are only
+        // centred until the user moves them, so they must take part in the same
+        // snapping as everything else instead of being silently skipped.
+        SnapCandidate snappedX = nearestCandidate(x, xCandidates);
+        if (snappedX != null) {
+            x = snappedX.position();
+            this.activeGuideX = snappedX.guide();
         }
         SnapCandidate snappedY = nearestCandidate(y, yCandidates);
         if (snappedY != null) {
@@ -374,6 +546,125 @@ public final class HudFeature extends Feature {
     private void clearSnapGuides() {
         this.activeGuideX = Float.NaN;
         this.activeGuideY = Float.NaN;
+    }
+
+    // --- resize handle -------------------------------------------------------
+    // Lives in the bottom-right corner of the dragged element and scales the HUD
+    // 50..180%. A handle with no numeric readout forces the user to guess, so the
+    // live percentage is drawn next to the grip.
+
+    private static final float HANDLE_SIZE = 9.0F;
+    private static final float HANDLE_GRAB = 18.0F;
+
+    private float handleX;
+    private float handleY;
+    private float handleSize;
+
+    private float handleCenterX(Minecraft mc, float unit, HudElement element) {
+        return element.x() + element.width();
+    }
+
+    private float handleCenterY(Minecraft mc, float unit, HudElement element) {
+        return element.y() + element.height();
+    }
+
+    private HudElement handleTarget(Minecraft mc, List<HudElement> visible) {
+        if (this.draggedElement != null) {
+            return this.draggedElement;
+        }
+        float mouseX = mouseX(mc);
+        float mouseY = mouseY(mc);
+        HudElement best = null;
+        float bestDistance = Float.MAX_VALUE;
+        // Topmost first, so a handle sitting over two panels picks the one the
+        // user can actually see.
+        for (int i = visible.size() - 1; i >= 0; i--) {
+            HudElement element = visible.get(i);
+            if (element.width() <= 0.5F || element.height() <= 0.5F) {
+                continue;
+            }
+            float dx = mouseX - handleCenterX(mc, 1.0F, element);
+            float dy = mouseY - handleCenterY(mc, 1.0F, element);
+            float distance = (float) Math.sqrt(dx * dx + dy * dy);
+            if (distance <= HANDLE_GRAB && distance < bestDistance) {
+                best = element;
+                bestDistance = distance;
+            }
+        }
+        return best;
+    }
+
+    private void drawResizeHandle(Minecraft mc, float unit, List<HudElement> visible) {
+        HudElement target = handleTarget(mc, visible);
+        if (target == null) {
+            this.handleSize = 0.0F;
+            return;
+        }
+        float size = HANDLE_SIZE * Math.max(1.0F, unit * 0.8F);
+        float cx = handleCenterX(mc, unit, target);
+        float cy = handleCenterY(mc, unit, target);
+        float x = cx - size / 2.0F;
+        float y = cy - size / 2.0F;
+        this.handleX = x;
+        this.handleY = y;
+        this.handleSize = size;
+
+        boolean active = this.resizedElement == target;
+        boolean hovered = inside(mouseX(mc), mouseY(mc), x - HANDLE_GRAB / 2.0F,
+                y - HANDLE_GRAB / 2.0F, size + HANDLE_GRAB, size + HANDLE_GRAB);
+        int accent = Theme.getAccent();
+        int gripColor = ColorUtil.multiplyAlpha(active || hovered ? ColorUtil.WHITE : accent,
+                active ? 0.95F : hovered ? 0.85F : 0.65F);
+
+        Render2DUtil.rect(x, y, size, size)
+                .radius(size * 0.32F)
+                .color(gripColor)
+                .draw();
+        // Diagonal grip lines, so the handle reads as "resize" and not "dot".
+        float arm = size * 0.34F;
+        float line = Math.max(1.0F, size * 0.13F);
+        float diag = (float) Math.toDegrees(Math.atan2(size, size));
+        RenderContext.currentGuiGraphicsExtractor().pose().pushMatrix();
+        RenderContext.currentGuiGraphicsExtractor().pose().translate(x + size * 0.5F, y + size * 0.5F);
+        RenderContext.currentGuiGraphicsExtractor().pose().rotate(diag);
+        Render2DUtil.rect(arm - line / 2.0F, -size * 0.30F, arm, line).radius(line / 2.0F)
+                .color(ColorUtil.multiplyAlpha(ColorUtil.WHITE, 0.55F)).draw();
+        RenderContext.currentGuiGraphicsExtractor().pose().rotate(-diag);
+        Render2DUtil.rect(0.0F, size * 0.30F - line / 2.0F, arm, line).radius(line / 2.0F)
+                .color(ColorUtil.multiplyAlpha(ColorUtil.WHITE, 0.55F)).draw();
+        RenderContext.currentGuiGraphicsExtractor().pose().popMatrix();
+
+        // The readout only appears while the user interacts with the grip:
+        // a permanent pill permanently covers HUD content.
+        if (active || hovered) {
+            drawResizeReadout(mc, unit, x + size / 2.0F, y, target.scalePercent());
+        }
+    }
+
+    /** Live "128%" pill under the grip. */
+    private void drawResizeReadout(Minecraft mc, float unit, float centerX, float topY, float percent) {
+        MsdfFont font = UiFonts.sfProDisplay();
+        float textSize = 9.0F * Math.max(1.0F, unit * 0.85F);
+        float letterSpacing = textSize * UiFontStyle.MEDIUM.letterSpacingEm();
+        String label = Math.round(percent) + "%";
+        float textWidth = font.measureWidth(label, textSize, letterSpacing);
+        float padX = 7.0F * Math.max(1.0F, unit * 0.8F);
+        float padY = 4.0F * Math.max(1.0F, unit * 0.8F);
+        float pillW = textWidth + padX * 2.0F;
+        float pillH = font.textHeight(textSize) + padY * 2.0F;
+        float pillX = centerX - pillW / 2.0F;
+        float pillY = topY + 6.0F * Math.max(1.0F, unit * 0.8F);
+
+        Render2DUtil.rect(pillX, pillY, pillW, pillH)
+                .radius(pillH * 0.5F)
+                .color(Theme.Colors.BACKGROUND_PRIMARY_50)
+                .border(Math.max(0.5F, 0.5F * unit), Theme.getAccent())
+                .blur(8.0F * unit)
+                .draw();
+        Render2DUtil.text(pillX + padX, pillY + padY, textSize, label)
+                .style(UiFontStyle.MEDIUM)
+                .color(ColorUtil.multiplyAlpha(ColorUtil.WHITE, 0.95F))
+                .draw();
     }
 
     private void drawResetButton(Minecraft mc, float unit, List<HudElement> visible) {
@@ -487,9 +778,25 @@ public final class HudFeature extends Feature {
     }
 
     private void stopDrag(Minecraft mc) {
-        this.draggedElement.stopDrag(mc);
+        HudElement element = this.draggedElement;
         this.draggedElement = null;
         clearSnapGuides();
+        if (element == null) {
+            return;
+        }
+        // stopDrag latches the measured throw speed; the velocity has to be read
+        // AFTER it, not before.
+        element.stopDrag(mc);
+        float throwX = element.releaseVelocityX();
+        float throwY = element.releaseVelocityY();
+        element.clearThrow();
+        // Below this the drag was a slow reposition, not a throw. Re-launching it
+        // just adds a stutter at the end of every deliberate placement.
+        if (Math.abs(throwX) > 60.0F || Math.abs(throwY) > 60.0F) {
+            element.fling(throwX, throwY);
+        } else {
+            element.settleNow();
+        }
     }
 
     private static boolean controlDown(Minecraft mc) {

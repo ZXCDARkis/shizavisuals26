@@ -16,7 +16,7 @@ public final class ChestStealerFeature extends Feature {
     private long lastMoveAt;
 
     public ChestStealerFeature() {
-        super("ChestStealer", "Automatically takes items from containers", FeatureCategory.MISC, BindSetting.UNBOUND);
+        super("ChestStealer", "Автоматически забирает предметы из контейнеров", FeatureCategory.MISC, BindSetting.UNBOUND);
     }
 
     @EventTarget

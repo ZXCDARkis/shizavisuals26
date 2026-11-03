@@ -76,9 +76,8 @@ public final class WatermarkElement extends HudElement {
         float textSize = TEXT_SIZE * unit;
 
         // Single capsule background
-        Render2DUtil.rect(this.x, this.y, this.width, this.height)
-                .color(ColorUtil.multiplyAlpha(CARD_BG, alpha))
-                .radius(8.0F * unit)
+        Render2DUtil.surface(this.x, this.y, this.width, this.height,
+                ColorUtil.multiplyAlpha(CARD_BG, alpha), 8.0F * unit, 32.0F * unit)
                 .draw();
 
         float centerY = this.y + ROW_HEIGHT * unit / 2.0F;

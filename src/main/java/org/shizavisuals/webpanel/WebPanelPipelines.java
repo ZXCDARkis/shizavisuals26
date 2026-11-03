@@ -128,6 +128,10 @@ public final class WebPanelPipelines {
             .withCull(false)
             .build();
 
+    public static java.util.List<RenderPipeline> pipelines() {
+        return java.util.List.of(GLASS, SDF_DEPTH, SDF_OVERLAY, TEXT);
+    }
+
     public static GpuBuffer createUniforms(String label, int size) {
         return RenderSystem.getDevice().createBuffer(
                 () -> label,

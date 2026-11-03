@@ -1,26 +1,99 @@
 package org.shizavisuals.hud.island;
 
-import org.shizavisuals.utils.ColorUtil;
 import org.shizavisuals.utils.render.gui.MsdfFont;
 import org.shizavisuals.utils.render.gui.Render2DUtil;
 import org.shizavisuals.utils.render.gui.UiFontStyle;
 
 public final class IslandKaraoke {
 
+    private static ShapedLine cached;
+
     private IslandKaraoke() {
     }
 
-    public static float[][] wordBounds(MsdfFont font, String line, float size, float ls) {
-        String[] words = line.split(" ", -1);
-        float[][] bounds = new float[words.length][2];
-        float cursor = 0.0F;
-        float spaceWidth = font.measureWidth(" ", size, ls);
-        for (int i = 0; i < words.length; i++) {
-            float w = font.measureWidth(words[i], size, ls);
-            bounds[i][0] = cursor;
-            bounds[i][1] = cursor + w;
-            cursor += w + spaceWidth;
+    /**
+     * Shaped representation of one lyric line, reused across frames so karaoke
+     * drawing and measuring stay allocation-free while the line is unchanged.
+     */
+    private static final class ShapedLine {
+        private final MsdfFont font;
+        private final String text;
+        private final float size;
+        private final float letterSpacing;
+        private final MsdfFont.Paragraph paragraph;
+        private final MsdfFont.Line line;
+        private final String[] glyphTexts;
+        private final float[] penX;
+        private final float[] glyphWidths;
+        private final float totalWidth;
+
+        private ShapedLine(MsdfFont font, String text, float size, float letterSpacing) {
+            this.font = font;
+            this.text = text;
+            this.size = size;
+            this.letterSpacing = letterSpacing;
+            this.paragraph = font.shape(text);
+            this.line = this.paragraph.lines().get(0);
+            int count = this.line.glyphCount();
+            this.glyphTexts = new String[count];
+            this.penX = new float[count + 1];
+            this.glyphWidths = new float[count];
+            int at = 0;
+            for (int i = 0; i < count; i++) {
+                int codePoint = this.line.codePointAt(i);
+                int chars = Character.charCount(codePoint);
+                this.glyphTexts[i] = text.substring(at, Math.min(text.length(), at + chars));
+                this.glyphWidths[i] = this.line.glyphAt(i).advanceEm() * size;
+                at += chars;
+            }
+            for (int i = 0; i < count; i++) {
+                this.penX[i] = this.line.penX(i, size, letterSpacing);
+            }
+            this.penX[count] = this.line.width(size, letterSpacing);
+            this.totalWidth = this.penX[count];
         }
+
+        private float width(int index) {
+            return this.glyphWidths[index];
+        }
+    }
+
+    private static ShapedLine shape(MsdfFont font, String line, float size, float ls) {
+        ShapedLine current = cached;
+        if (current != null
+                && current.font == font
+                && current.size == size
+                && current.letterSpacing == ls
+                && current.text.equals(line)) {
+            return current;
+        }
+        current = new ShapedLine(font, line, size, ls);
+        cached = current;
+        return current;
+    }
+
+    public static float[][] wordBounds(MsdfFont font, String line, float size, float ls) {
+        ShapedLine shaped = shape(font, line, size, ls);
+        int count = shaped.glyphTexts.length;
+        int words = 1;
+        for (int i = 0; i < count; i++) {
+            if (shaped.glyphTexts[i].charAt(0) == ' ') {
+                words++;
+            }
+        }
+        float[][] bounds = new float[words][2];
+        int word = 0;
+        float start = 0.0F;
+        for (int i = 0; i < count; i++) {
+            if (shaped.glyphTexts[i].charAt(0) == ' ') {
+                bounds[word][0] = start;
+                bounds[word][1] = shaped.penX[i];
+                word++;
+                start = shaped.penX[i + 1];
+            }
+        }
+        bounds[word][0] = start;
+        bounds[word][1] = shaped.totalWidth;
         return bounds;
     }
 
@@ -28,12 +101,29 @@ public final class IslandKaraoke {
         if (maxWidth <= 0.0F) {
             return 0;
         }
-        for (int i = 1; i <= line.length(); i++) {
-            if (font.measureWidth(line.substring(0, i), size, ls) > maxWidth) {
-                return i - 1;
+        ShapedLine shaped = shape(font, line, size, ls);
+        int count = shaped.glyphTexts.length;
+        if (count == 0) {
+            return 0;
+        }
+        if (shaped.totalWidth <= maxWidth) {
+            return line.length();
+        }
+        int low = 0;
+        int high = count;
+        while (low < high) {
+            int mid = (low + high + 1) >>> 1;
+            if (shaped.penX[mid] > maxWidth) {
+                high = mid - 1;
+            } else {
+                low = mid;
             }
         }
-        return line.length();
+        int chars = 0;
+        for (int i = 0; i < low; i++) {
+            chars += shaped.glyphTexts[i].length();
+        }
+        return chars;
     }
 
     /**
@@ -52,19 +142,20 @@ public final class IslandKaraoke {
         if (swapAlpha <= 0.01F || line.isEmpty()) {
             return;
         }
+        ShapedLine shaped = shape(font, line, size, ls);
+        int count = shaped.glyphTexts.length;
+        if (count == 0) {
+            return;
+        }
         float slide = (swapIn ? 1.0F - swap : swap) * 10.0F;
         float drawX = x - scroll + (swapIn ? slide : -slide);
         float colorAlpha = ((color >>> 24) & 0xFF) / 255.0F;
         int rgb = color & 0x00FFFFFF;
 
-        float charX = 0.0F;
-        int index = 0;
-        int length = line.length();
-        while (index < length) {
-            int codePoint = line.codePointAt(index);
-            int chars = Character.charCount(codePoint);
-            String glyphText = line.substring(index, index + chars);
-            float width = font.measureWidth(glyphText, size, ls);
+        for (int index = 0; index < count; index++) {
+            String glyphText = shaped.glyphTexts[index];
+            float charX = shaped.penX[index];
+            float width = shaped.width(index);
 
             float sung;
             if (cursorPx < 0.0F) {
@@ -93,8 +184,6 @@ public final class IslandKaraoke {
                         .color(rgb | (Math.round(alpha * 255.0F) << 24))
                         .draw();
             }
-            charX += width;
-            index += chars;
         }
     }
 }

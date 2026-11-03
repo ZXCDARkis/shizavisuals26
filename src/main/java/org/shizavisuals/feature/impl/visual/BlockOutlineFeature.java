@@ -75,7 +75,7 @@ public final class BlockOutlineFeature extends Feature {
     ).configKey("render.blockoutline.shaderIntensity").visibleWhen(this::usesShader));
 
     public BlockOutlineFeature() {
-        super("BlockOutline", "Animated shader over the selected block", FeatureCategory.VISUAL, BindSetting.UNBOUND);
+        super("BlockOutline", "Анимированный шейдер над выбранным блоком", FeatureCategory.VISUAL, BindSetting.UNBOUND);
     }
 
     public static BlockOutlineFeature getEnabled() {

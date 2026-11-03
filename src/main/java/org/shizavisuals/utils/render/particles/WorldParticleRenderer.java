@@ -97,6 +97,10 @@ public final class WorldParticleRenderer {
             .withCull(false)
             .build();
 
+    public static List<RenderPipeline> pipelines() {
+        return List.of(PIPELINE, THROUGH_WALLS_PIPELINE, ALPHA_PIPELINE, ALPHA_THROUGH_WALLS_PIPELINE);
+    }
+
     public record Sprite(Vec3 position, float halfSize, int color) {
     }
 

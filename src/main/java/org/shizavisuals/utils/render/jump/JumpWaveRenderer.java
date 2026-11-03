@@ -59,6 +59,10 @@ public final class JumpWaveRenderer {
             .withCull(false)
             .build();
 
+    public static RenderPipeline pipeline() {
+        return PIPELINE;
+    }
+
     private final SceneSnapshot scene = new SceneSnapshot("shizavisuals-jump-wave-scene");
 
     public void render(Vec3 center, float maxRadius, float ringProgress, float strength, float waveFade, int crestColor) {

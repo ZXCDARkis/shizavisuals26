@@ -35,7 +35,7 @@ public final class CapeFeature extends Feature {
     ));
 
     public CapeFeature() {
-        super("Capes", "Custom cosmetic capes visible on you", FeatureCategory.VISUAL, BindSetting.UNBOUND);
+        super("Capes", "Свои косметические плащи, видимые на вас", FeatureCategory.VISUAL, BindSetting.UNBOUND);
     }
 
     public CapeStyle currentStyle() {

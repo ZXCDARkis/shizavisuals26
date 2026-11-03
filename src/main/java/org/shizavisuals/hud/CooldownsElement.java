@@ -32,6 +32,9 @@ public final class CooldownsElement extends HudElement {
     private static final float ICON_SIZE = 14.0F;
     private static final float PADDING_X = 8.0F;
     private static final float ROW_GAP = 4.0F;
+    private static final Item[] CHECKED_ITEMS = {
+            Items.ENDER_PEARL, Items.CHORUS_FRUIT, Items.GOLDEN_APPLE, Items.ENCHANTED_GOLDEN_APPLE
+    };
 
     public record CooldownRow(ItemStack itemStack, String name, String timeText, float progress) {
     }
@@ -185,17 +188,31 @@ public final class CooldownsElement extends HudElement {
         }
     }
 
+    private static String formatSeconds(int seconds) {
+        int minutes = seconds / 60;
+        int rest = seconds % 60;
+        if (minutes < 10 && rest < 10) {
+            return "0" + minutes + ":0" + rest;
+        }
+        if (minutes < 10) {
+            return "0" + minutes + ":" + rest;
+        }
+        if (rest < 10) {
+            return minutes + ":0" + rest;
+        }
+        return minutes + ":" + rest;
+    }
+
     private void collectCooldowns(Minecraft mc) {
         this.rows.clear();
         if (mc.player != null) {
-            Item[] checkedItems = {Items.ENDER_PEARL, Items.CHORUS_FRUIT, Items.GOLDEN_APPLE, Items.ENCHANTED_GOLDEN_APPLE};
-            for (Item item : checkedItems) {
+            for (Item item : CHECKED_ITEMS) {
                 ItemStack stack = item.getDefaultInstance();
                 if (mc.player.getCooldowns().isOnCooldown(stack)) {
                     float cooldown = mc.player.getCooldowns().getCooldownPercent(stack, 0.0F);
                     int totalTicks = (int) (cooldown * 400); // approx
                     int seconds = totalTicks / 20;
-                    String timeStr = seconds / 60 + ":" + String.format("%02d", seconds % 60);
+                    String timeStr = formatSeconds(seconds);
                     String name = BuiltInRegistries.ITEM.getKey(item).getPath();
                     name = Character.toUpperCase(name.charAt(0)) + name.substring(1);
                     this.rows.add(new CooldownRow(stack, name, timeStr, cooldown));

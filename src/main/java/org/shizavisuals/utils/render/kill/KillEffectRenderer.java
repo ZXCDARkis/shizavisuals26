@@ -101,6 +101,10 @@ public final class KillEffectRenderer {
         return java.util.Map.copyOf(map);
     }
 
+    public static java.util.List<RenderPipeline> pipelines() {
+        return java.util.List.copyOf(PIPELINES.values());
+    }
+
     /**
      * Main ShaderEffect function.
      *

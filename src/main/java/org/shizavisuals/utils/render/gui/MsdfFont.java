@@ -17,7 +17,6 @@ import org.shizavisuals.context.MinecraftContext;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.Reader;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -39,12 +38,8 @@ public final class MsdfFont {
     private final Int2ObjectMap<Glyph> glyphs;
     private final Long2FloatMap kerning;
     private final Glyph fallbackGlyph;
-    private final Map<String, Paragraph> shapeCache = new LinkedHashMap<>(256, 0.75F, true) {
-        @Override
-        protected boolean removeEldestEntry(Map.Entry<String, Paragraph> eldest) {
-            return size() > SHAPE_CACHE_CAPACITY;
-        }
-    };
+    private final Map<String, Paragraph> shapeCache = new ConcurrentHashMap<>();
+    private volatile Paragraph ellipsisParagraph;
     private TextureSetup textureSetup;
 
     private MsdfFont(Identifier metadataId, FontFile file) {
@@ -140,7 +135,12 @@ public final class MsdfFont {
             return text;
         }
         Line line = paragraph.lines().get(0);
-        float budget = maxWidth - shape("...").maxWidth(size, letterSpacing);
+        Paragraph dots = this.ellipsisParagraph;
+        if (dots == null) {
+            dots = shapeUncached("...");
+            this.ellipsisParagraph = dots;
+        }
+        float budget = maxWidth - dots.maxWidth(size, letterSpacing);
 
         int low = 0;
         int high = line.glyphCount();
@@ -166,6 +166,9 @@ public final class MsdfFont {
             return cached;
         }
         Paragraph paragraph = shapeUncached(text);
+        if (this.shapeCache.size() >= SHAPE_CACHE_CAPACITY) {
+            this.shapeCache.clear();
+        }
         this.shapeCache.put(text, paragraph);
         return paragraph;
     }
@@ -328,7 +331,7 @@ public final class MsdfFont {
             return em * size + letterSpacing * last;
         }
 
-        private int codePointAt(int glyphIndex) {
+        public int codePointAt(int glyphIndex) {
             return this.codePoints[glyphIndex];
         }
 

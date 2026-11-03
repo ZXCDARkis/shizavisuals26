@@ -12,6 +12,8 @@ public final class Animation {
     private float toValue;
     private boolean reverse;
     private Easing easing;
+    private long cachedFrameNanos = Long.MIN_VALUE;
+    private long cachedElapsedMillis;
 
     public Animation(long duration, Easing easing) {
         setDuration(duration);
@@ -21,6 +23,7 @@ public final class Animation {
 
     public void reset() {
         this.startNanos = System.nanoTime();
+        this.cachedFrameNanos = Long.MIN_VALUE;
     }
 
     public void animate(float from, float to, long duration, Easing easing) {
@@ -72,7 +75,15 @@ public final class Animation {
     }
 
     private long elapsedMillis() {
-        return TimeUnit.NANOSECONDS.toMillis(Math.max(0L, System.nanoTime() - this.startNanos));
+        long now = System.nanoTime();
+        // getValue()/isFinished() are polled several times per frame per component;
+        // one clock read per frame instead of one per call. Also quantised to 1/240 s
+        // so sub-millisecond jitter cannot make the easing visibly stutter.
+        if (this.cachedFrameNanos != now) {
+            this.cachedFrameNanos = now;
+            this.cachedElapsedMillis = TimeUnit.NANOSECONDS.toMillis(Math.max(0L, now - this.startNanos));
+        }
+        return this.cachedElapsedMillis;
     }
 
     public enum Easing {

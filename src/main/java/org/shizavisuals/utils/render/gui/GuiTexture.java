@@ -33,6 +33,7 @@ public final class GuiTexture {
     private static final int MAX_VARIANTS = 8;
     private static final int SUPERSAMPLE = 2;
     private static final int MAX_TEXTURE_SIZE = 2048;
+    private static final boolean SVG_SUPPORT_AVAILABLE = detectSvgSupport();
 
     private final Identifier textureId;
     private final boolean svg;
@@ -86,7 +87,7 @@ public final class GuiTexture {
         if (cached != null) {
             return cached;
         }
-        TextureSetup created = createSvgSetup(key);
+        TextureSetup created = SVG_SUPPORT_AVAILABLE ? createSvgSetup(key) : createPlaceholderSetup(key);
         this.svgVariants.put(key, created);
         return created;
     }
@@ -95,8 +96,24 @@ public final class GuiTexture {
         if (!this.svg) {
             return staticSetup();
         }
+        if (!SVG_SUPPORT_AVAILABLE) {
+            return textureSetup(16.0F, 16.0F);
+        }
         FloatSize size = documentSize();
         return textureSetup((float) size.getWidth(), (float) size.getHeight());
+    }
+
+    private TextureSetup createPlaceholderSetup(long key) {
+        int width = Math.min(MAX_TEXTURE_SIZE, Math.max(1, unpackWidth(key)));
+        int height = Math.min(MAX_TEXTURE_SIZE, Math.max(1, unpackHeight(key)));
+        Identifier placeholderId = variantId(this.textureId, key);
+        DynamicTexture texture = new DynamicTexture(placeholderId::toString, placeholderImage(width, height));
+        texture.upload();
+        MinecraftContext.mc.getTextureManager().register(placeholderId, texture);
+        return TextureSetup.singleTexture(
+                texture.getTextureView(),
+                RenderSystem.getSamplerCache().getClampToEdge(FilterMode.NEAREST, false)
+        );
     }
 
     private TextureSetup staticSetup() {
@@ -140,7 +157,9 @@ public final class GuiTexture {
     }
 
     private static int quantize(float devicePx) {
-        return Math.max(1, (int) Math.ceil(devicePx));
+        // Coarse 4px grid: fractional device sizes (HiDPI, animated icon scaling)
+        // must reuse a cached variant instead of rasterizing a new SVG every frame.
+        return Math.max(1, Math.round(devicePx / 4.0F) * 4);
     }
 
     private static long packSize(int width, int height) {
@@ -177,7 +196,30 @@ public final class GuiTexture {
             return document;
         } catch (IOException exception) {
             throw new IllegalStateException("Failed to read GUI texture: " + textureId, exception);
+        } catch (Throwable throwable) {
+            throw new IllegalStateException("SVG rendering is unavailable: " + textureId, throwable);
         }
+    }
+
+    private static boolean detectSvgSupport() {
+        try {
+            Class.forName("com.github.weisj.jsvg.parser.SVGLoader", false, GuiTexture.class.getClassLoader());
+            return true;
+        } catch (Throwable throwable) {
+            LOGGER.error("SVG library (jsvg) is not on the classpath - icons fall back to placeholders. "
+                    + "Check that META-INF/jars/jsvg-*.jar exists and is listed in fabric.mod.json.", throwable);
+            return false;
+        }
+    }
+
+    private static NativeImage placeholderImage(int width, int height) {
+        NativeImage image = new NativeImage(NativeImage.Format.RGBA, width, height, false);
+        for (int y = 0; y < height; y++) {
+            for (int x = 0; x < width; x++) {
+                image.setPixelABGR(x, y, 0xFF3A3F4B);
+            }
+        }
+        return image;
     }
 
     private static NativeImage rasterizeSvg(Identifier textureId, SVGDocument document, int width, int height) {

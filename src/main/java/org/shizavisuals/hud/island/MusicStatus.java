@@ -32,6 +32,10 @@ public class MusicStatus extends ExtandableStatus {
     private static final Identifier PAUSE = Identifier.parse("shizavisuals:icons/hud/island/music/pause.png");
     private static final Identifier NEXT = Identifier.parse("shizavisuals:icons/hud/island/music/next.png");
 
+    private static volatile long lastTimeMinutes = -1L;
+    private static volatile long lastTimeSeconds = -1L;
+    private static volatile String lastTimeText = "";
+
     private static volatile Snapshot snapshot = Snapshot.EMPTY;
     private static volatile LyricsData lyrics = LyricsData.EMPTY;
     private static volatile String lyricsTrackKey = "";
@@ -48,16 +52,40 @@ public class MusicStatus extends ExtandableStatus {
     private static final java.util.concurrent.atomic.AtomicBoolean artLoadPending =
             new java.util.concurrent.atomic.AtomicBoolean(false);
 
-    // Millisecond-precision playback clock: anchored to the last reported
-    // position and interpolated on the wall clock between reports. The key
-    // property is that it SNAPS to the reported position on every report, so a
-    // seek (backward or forward) is reflected immediately instead of the clock
-    // "counting" from track start or freezing on a transient "paused" flag.
-    // seekVersion is bumped only on a REAL seek — see updateSmoothClock.
-    private static long smoothAnchorMs;
-    private static long smoothAnchorWall;
-    private static long smoothLastReportedPos = -1L;
-    private static int seekVersion = 0;
+    // Millisecond-precision playback clock.
+    //
+    // The reported SMTC position jumps by hundreds of ms between polls
+    // (quantization, timing jitter), so the clock NEVER follows a report
+    // position directly — that made the karaoke cursor and the floating words
+    // twitch several times per second. Instead:
+    //
+    //   position = baseMs + (now - baseWall) * rate
+    //
+    // On every report we re-anchor baseMs to the CURRENT predicted value, which
+    // changes nothing on screen, and express the residual error as a small rate
+    // correction that bleeds off over ~RATE_BLEED_MS. A seek (>2s away) is the
+    // only thing that snaps the position and bumps seekVersion.
+    //
+    // Pausing sets rate to 0 and resuming re-anchors to the reported position,
+    // so a long pause can never accumulate into a multi-second forward jump.
+    private static volatile long clockBaseMs;
+    private static volatile long clockBaseWall;
+    private static volatile double clockRate = 1.0D;
+    private static volatile int seekVersion = 0;
+    private static final long SEEK_THRESHOLD_MS = 2000L;
+    // How long a sub-threshold error takes to bleed off: 400ms of error is
+    // absorbed over 4s, i.e. a 10% speed tweak you cannot see.
+    private static final long RATE_BLEED_MS = 4000L;
+    private static final double MAX_RATE = 1.25D;
+    private static final double MIN_RATE = 0.75D;
+    // Debounced transport state: SMTC flaps `playing` during seeks and codec
+    // hiccups, and the wave bars collapsed to a flat row on every flap.
+    // Starts true so the very first frames of a track are treated as playing.
+    private static volatile boolean stablePlaying = true;
+    private static volatile int playRun;
+    private static volatile int pauseRun;
+    private static final int PLAY_STABLE_REPORTS = 2;
+    private static final int PAUSE_STABLE_REPORTS = 4;
 
     private String tickerPrevText;
 
@@ -206,39 +234,80 @@ public class MusicStatus extends ExtandableStatus {
             // wall-clock time the track was first seen instead.
             reportedMs = Math.max(0L, now - trackStartWall);
         }
-        // Between reports we interpolate on the wall clock; on each report we
-        // compare the freshly reported position with where the clock "should" be.
-        //   err = reportedMs - predicted
-        // A large err means a real seek (the position jumped far away) -> snap
-        // and bump seekVersion so lyric surfaces resync. A small err is just
-        // quantization/rounding jitter (e.g. 79s<->80s) -> we gently nudge the
-        // anchor toward the report instead of snapping, so the cursor never
-        // oscillates or freezes. We deliberately never freeze on a "paused" flag:
-        // SMTC врёт про паузу во время сика/скраба, заморозка рвёт тексты.
-        long predicted = smoothAnchorMs + (now - smoothAnchorWall);
-        long err = reportedMs - predicted;
-        if (trackChanged) {
-            seekVersion++;
-            smoothAnchorMs = reportedMs;
-        } else if (Math.abs(err) > 2000L) {
-            // Real seek (or track restart): snap and resync lyrics.
-            seekVersion++;
-            smoothAnchorMs = reportedMs;
+        // Debounce the transport flag: the bars, the pause icon and every
+        // "is it playing" decision must not follow a single noisy report.
+        boolean wasPlaying = stablePlaying;
+        if (playing) {
+            pauseRun = 0;
+            playRun = wasPlaying ? 0 : playRun + 1;
+            if (playRun >= PLAY_STABLE_REPORTS) {
+                stablePlaying = true;
+                playRun = 0;
+            }
         } else {
-            // Normal playback: pull the anchor a quarter of the way toward the
-            // report so jitter averages out without visible jumps.
-            smoothAnchorMs = predicted + err * 25L / 100L;
+            playRun = 0;
+            pauseRun = wasPlaying ? pauseRun + 1 : 0;
+            if (pauseRun >= PAUSE_STABLE_REPORTS) {
+                stablePlaying = false;
+                pauseRun = 0;
+            }
         }
-        smoothAnchorWall = now;
-        smoothLastReportedPos = reportedPositionMs;
+        boolean nowPlaying = stablePlaying;
+
+        long predicted = clockBaseMs
+                + Math.round((now - clockBaseWall) * clockRate);
+        long err = reportedMs - predicted;
+
+        if (trackChanged || Math.abs(err) > SEEK_THRESHOLD_MS) {
+            // Track switch or a real seek: snap. Lyric surfaces resync via
+            // seekVersion.
+            seekVersion++;
+            clockBaseMs = reportedMs;
+            clockBaseWall = now;
+            clockRate = nowPlaying ? 1.0D : 0.0D;
+        } else if (wasPlaying != nowPlaying) {
+            // Pause/resume edge. Freeze or unfreeze WITHOUT applying err: the
+            // report lags by up to a poll interval (and by the whole pause on
+            // resume), and letting that into the base is what used to make the
+            // lyrics jump forward after a pause.
+            clockBaseMs = nowPlaying ? reportedMs : predicted;
+            clockBaseWall = now;
+            clockRate = nowPlaying ? 1.0D : 0.0D;
+        } else {
+            // Re-anchor to the current prediction: continuous by construction.
+            // The residual error becomes a bounded rate correction instead of a
+            // position jump.
+            clockBaseMs = predicted;
+            clockBaseWall = now;
+            if (nowPlaying) {
+                double target = 1.0D + (double) err / (double) RATE_BLEED_MS;
+                clockRate = Math.clamp(target, MIN_RATE, MAX_RATE);
+            } else {
+                // Paused: hold, but track the reported position so the accumulated
+                // pause is not later mistaken for a seek.
+                clockBaseMs = reportedMs;
+                clockRate = 0.0D;
+            }
+        }
         if (trackChanged) {
             trackStartWall = now - (reportedMs > 0L ? reportedMs : 0L);
         }
     }
 
     private static long smoothPositionMs() {
-        long position = smoothAnchorMs + (System.currentTimeMillis() - smoothAnchorWall);
-        return Math.max(0L, position);
+        long base = clockBaseMs;
+        long wall = clockBaseWall;
+        double rate = clockRate;
+        return Math.max(0L, base + Math.round((System.currentTimeMillis() - wall) * rate));
+    }
+
+    /**
+     * Transport state that has held for several consecutive reports. SMTC
+     * misreports {@code playing} across seeks and buffering, and consumers that
+     * trust the raw flag (bars, icon, text progress) visibly blink on it.
+     */
+    public static boolean playing() {
+        return stablePlaying;
     }
 
     /** Bumped on every track change and on every detected seek. */
@@ -468,7 +537,7 @@ public class MusicStatus extends ExtandableStatus {
                 .replaceAll("(?i)\\s*-\\s*(remaster(ed)?|single version|radio edit|bonus track|live|remix)\\b.*$", " ")
                 .replaceAll("\\s{2,}", " ")
                 .trim();
-        return result.isBlank() ? title.trim() : result;
+        return result.isBlank() ? title == null ? "" : title.trim() : result;
     }
 
     private static String urlEncode(String value) {
@@ -955,7 +1024,7 @@ public class MusicStatus extends ExtandableStatus {
                     .draw();
 
             this.pausingAnim.setDuration(600L);
-            this.pausingAnim.update(snap.playing ? 1.0F : 0.0F);
+            this.pausingAnim.update(MusicStatus.playing() ? 1.0F : 0.0F);
             if (extending > 0.7F) {
                 drawControls(s, y, height, extending, textColor, alpha);
             }
@@ -1105,22 +1174,29 @@ public class MusicStatus extends ExtandableStatus {
 
     private void drawWaveBars(Snapshot snap, float s, float x, float y, float collapsedWidth,
                               float extending, float anim, float alpha, float displayPosition) {
-        long wall = System.currentTimeMillis();
+        // The phase must be computed in double: currentTimeMillis is ~1.7e12 and a
+        // float keeps ~7 significant digits, so `wall / 140` froze for seconds at a
+        // time. Wrapping with % 60000 also produced a visible jump once a minute
+        // (the sawtooth discontinuity of the modulo). A double ramp is both
+        // precise and continuous.
+        double wall = System.currentTimeMillis() / 140.0D;
+        boolean playing = MusicStatus.playing();
         for (int i = 0; i < this.waveAnims.length; i++) {
             float size;
-            if (snap.playing) {
-                this.waveAnims[i].setDuration(90L);
-                float phase = displayPosition * 2.4F + wall / 140.0F + (float) i * 0.8F;
+            if (playing) {
+                double phase = wall + displayPosition * 2.4D + (double) i * 0.8D;
                 size = 2.0F + (float) Math.abs(Math.sin(phase)) * 7.5F;
             } else {
-                this.waveAnims[i].setDuration(400L);
                 size = 3.0F;
             }
-            this.waveAnims[i].update(size);
+            // Drive the height directly. Smoothing towards a target that changes
+            // every frame restarted the easing each frame, so the value never got
+            // past its start and the bars never actually grew or shrank.
+            this.waveAnims[i].setValue(size);
             float waveX = x + (collapsedWidth + (EXP_WIDTH - 10.0F - collapsedWidth) * extending
                     - 2.0F - 10.0F * anim + (float) i * (2.0F + extending)) * s;
-            float waveY = y + ((4.25F + (14.0F - 4.25F) * extending) + (7.0F - this.waveAnims[i].getValue()) / 2.0F) * s;
-            Render2DUtil.rect(waveX, waveY, (1.0F + extending) * s, this.waveAnims[i].getValue() * s)
+            float waveY = y + ((4.25F + (14.0F - 4.25F) * extending) + (7.0F - size) / 2.0F) * s;
+            Render2DUtil.rect(waveX, waveY, (1.0F + extending) * s, size * s)
                     .radius(0.5F * s)
                     .color(ColorUtil.multiplyAlpha(Theme.getAccent(), alpha))
                     .draw();
@@ -1233,7 +1309,23 @@ public class MusicStatus extends ExtandableStatus {
     public static String formatTime(long totalSeconds) {
         long minutes = totalSeconds / 60L;
         long seconds = totalSeconds % 60L;
-        return String.format("%d:%02d", minutes, seconds);
+        if (minutes == lastTimeMinutes && seconds == lastTimeSeconds) {
+            return lastTimeText;
+        }
+        lastTimeMinutes = minutes;
+        lastTimeSeconds = seconds;
+        int minuteDigits = minutes < 100L ? 2 : (minutes < 1000L ? 3 : 4);
+        StringBuilder builder = new StringBuilder(minuteDigits + 3);
+        long value = minutes;
+        for (int i = minuteDigits - 1; i >= 0; i--) {
+            builder.append((char) ('0' + (int) (value % 10L)));
+            value /= 10L;
+        }
+        builder.append(':');
+        builder.append((char) ('0' + (int) (seconds / 10L)));
+        builder.append((char) ('0' + (int) (seconds % 10L)));
+        lastTimeText = builder.toString();
+        return lastTimeText;
     }
 
     /** Current media snapshot for other features (lyrics, etc). */

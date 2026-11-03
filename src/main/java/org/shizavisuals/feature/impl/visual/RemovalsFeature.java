@@ -48,7 +48,7 @@ public final class RemovalsFeature extends Feature {
     ));
 
     public RemovalsFeature() {
-        super("Removals", "Hides distracting overlays, world effects, particles, and sounds.", FeatureCategory.VISUAL, BindSetting.UNBOUND);
+        super("Removals", "Скрывает отвлекающие оверлеи, эффекты, частицы и звуки", FeatureCategory.VISUAL, BindSetting.UNBOUND);
         instance = this;
     }
 

@@ -125,7 +125,7 @@ public final class WorldTweaksFeature extends Feature {
     private String lastSelectedTime;
 
     public WorldTweaksFeature() {
-        super("WorldTweaks", "Time, fog, sky, saturation, and world lighting", FeatureCategory.VISUAL, BindSetting.UNBOUND);
+        super("WorldTweaks", "Время, туман, небо, насыщенность и освещение мира", FeatureCategory.VISUAL, BindSetting.UNBOUND);
         resetTimeAnimation();
     }
 

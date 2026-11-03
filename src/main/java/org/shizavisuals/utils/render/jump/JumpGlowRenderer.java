@@ -62,6 +62,10 @@ public final class JumpGlowRenderer {
             .withCull(false)
             .build();
 
+    public static RenderPipeline pipeline() {
+        return PIPELINE;
+    }
+
     private final SceneSnapshot scene = new SceneSnapshot("shizavisuals-jump-glow-scene");
 
     public void render(Vec3 center, float radius, float ringProgress, int color, float fade, float time) {

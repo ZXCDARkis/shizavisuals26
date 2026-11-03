@@ -58,9 +58,9 @@ public final class ArmorHudElement extends HudElement {
         }
 
         float alpha = appearAlpha();
-        Render2DUtil.rect(this.x, this.y, this.width, this.height)
-                .color(ColorUtil.multiplyAlpha(ColorUtil.rgba(22, 22, 22, 230), alpha))
-                .radius(PANEL_RADIUS * unit)
+        Render2DUtil.surface(this.x, this.y, this.width, this.height,
+                ColorUtil.multiplyAlpha(ColorUtil.rgba(22, 22, 22, 230), alpha),
+                PANEL_RADIUS * unit, 32.0F * unit)
                 .draw();
 
         float cellSize = CELL_SIZE * unit;

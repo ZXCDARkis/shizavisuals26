@@ -7,8 +7,6 @@ import net.minecraft.world.phys.Vec3;
 import org.shizavisuals.context.MinecraftContext;
 import org.shizavisuals.utils.ColorUtil;
 
-import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.regex.Matcher;
@@ -17,6 +15,10 @@ import java.util.regex.Pattern;
 public class MineStatus extends TimerStatus {
     private static final Pattern TIMER = Pattern.compile("(\\d{1,2}):(\\d{2})");
     private static final double RANGE_SQR = 900.0D;
+    private static final long SCAN_INTERVAL_MS = 500L;
+
+    private long nextScanAt;
+    private boolean visible;
 
     private static final List<String> SHAFT_KEYWORDS = List.of(
             "шахта", "осталось", "обычная", "редкая", "эпическая", "легендарная", "мифическая");
@@ -37,58 +39,68 @@ public class MineStatus extends TimerStatus {
         return refresh();
     }
 
+    /**
+     * Scans nearby armor stands for the mine timer. Called twice per frame
+     * (canShow + draw), so the result is throttled and reused in between.
+     */
     private boolean refresh() {
+        long now = System.currentTimeMillis();
+        if (now < this.nextScanAt) {
+            return this.visible;
+        }
+        this.nextScanAt = now + SCAN_INTERVAL_MS;
+        this.visible = scan();
+        return this.visible;
+    }
+
+    private boolean scan() {
         Minecraft mc = Minecraft.getInstance();
         if (mc == null || mc.level == null || mc.player == null || !isHolyworld()) {
             return false;
         }
         Vec3 playerPos = mc.player.position();
-        List<ArmorStand> stands = new ArrayList<>();
+        ArmorStand anchor = null;
+        double anchorDistance = Double.MAX_VALUE;
         for (Entity entity : mc.level.entitiesForRendering()) {
             if (!(entity instanceof ArmorStand stand) || !stand.isAlive() || stand.getCustomName() == null) {
                 continue;
             }
-            if (flatDistSqr(stand.position(), playerPos) > RANGE_SQR) {
+            double distance = flatDistSqr(stand.position(), playerPos);
+            if (distance > RANGE_SQR || distance >= anchorDistance) {
                 continue;
             }
-            stands.add(stand);
+            if (containsShaftKeyword(nameOf(stand))) {
+                anchor = stand;
+                anchorDistance = distance;
+            }
         }
-        if (stands.isEmpty()) {
-            return false;
-        }
-        ArmorStand anchor = stands.stream()
-                .filter(stand -> containsShaftKeyword(nameOf(stand)))
-                .min(Comparator.comparingDouble(stand -> flatDistSqr(stand.position(), playerPos)))
-                .orElse(null);
         if (anchor == null) {
             return false;
         }
-        List<ArmorStand> nearby = new ArrayList<>();
-        for (ArmorStand stand : stands) {
-            if (flatDistSqr(stand.position(), anchor.position()) <= 64.0D) {
-                nearby.add(stand);
+        Vec3 anchorPos = anchor.position();
+
+        String rarity = null;
+        Integer seconds = null;
+        for (Entity entity : mc.level.entitiesForRendering()) {
+            if (!(entity instanceof ArmorStand stand) || !stand.isAlive() || stand.getCustomName() == null) {
+                continue;
+            }
+            if (flatDistSqr(stand.position(), anchorPos) > 64.0D) {
+                continue;
+            }
+            String name = nameOf(stand);
+            if (rarity == null) {
+                rarity = matchRarity(name);
+            }
+            if (seconds == null) {
+                seconds = parseTimer(name);
+            }
+            if (rarity != null && seconds != null) {
+                break;
             }
         }
 
-        String rarity = null;
-        for (ArmorStand stand : nearby) {
-            String rarityName = matchRarity(nameOf(stand));
-            if (rarityName != null) {
-                rarity = rarityName;
-                break;
-            }
-        }
-        if (rarity == null) {
-            return false;
-        }
-        Integer seconds = null;
-        for (ArmorStand stand : nearby) {
-            seconds = parseTimer(nameOf(stand));
-            if (seconds != null) {
-                break;
-            }
-        }
-        if (seconds == null || seconds <= 0) {
+        if (rarity == null || seconds == null || seconds <= 0) {
             return false;
         }
         this.update(seconds / 60 + ":", "", seconds % 60, rarity, rarityColor(rarity));

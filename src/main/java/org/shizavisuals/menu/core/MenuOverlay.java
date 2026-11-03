@@ -83,6 +83,10 @@ public final class MenuOverlay {
         STATE.activateFocusedHeaderAction();
     }
 
+    public static boolean isResizing() {
+        return DRAG.resizing();
+    }
+
     public static void closePageOrOverlay(Minecraft minecraft) {
         if (STATE.page() != MenuPage.NONE) {
             STATE.openPage(MenuPage.NONE);
@@ -140,6 +144,21 @@ public final class MenuOverlay {
     }
 
     public static boolean handleMouseButton(Minecraft minecraft, int button, int action) {
+        if (action == GLFW.GLFW_RELEASE) {
+            // The menu can stop being interactive while a drag or grip hold is in
+            // progress (close animation, chat open, ...). The release must still
+            // reach the controller, otherwise the resize latch stays stuck: the
+            // percentage pill freezes on the previewed scale and the panel keeps
+            // living on the preview value.
+            boolean interactive = STATE.isInteractive();
+            if (interactive) {
+                RENDERER.releasePointer();
+            }
+            DRAG.onRelease(interactive ? STATE : null);
+            if (!interactive) {
+                STATE.cancelPreviewUiScale();
+            }
+        }
         if (!STATE.isInteractive()) {
             return false;
         }
@@ -152,16 +171,11 @@ public final class MenuOverlay {
 
         if (action == GLFW.GLFW_PRESS) {
             if (RENDERER.handleMouseButton(mouseX, mouseY, button, STATE)) {
-                DRAG.onRelease();
+                DRAG.onRelease(STATE);
                 return true;
             }
             if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT) {
                 DRAG.onPress(mouseX, mouseY, STATE, RENDERER);
-            }
-        } else if (action == GLFW.GLFW_RELEASE) {
-            RENDERER.releasePointer();
-            if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT) {
-                    DRAG.onRelease();
             }
         }
         return true;

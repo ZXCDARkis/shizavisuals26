@@ -5,7 +5,6 @@ import net.minecraft.client.gui.screens.ChatScreen;
 import net.minecraft.client.multiplayer.PlayerInfo;
 import net.minecraft.resources.Identifier;
 import org.lwjgl.glfw.GLFW;
-import org.lwjgl.opengl.GL11;
 import org.shizavisuals.context.MinecraftContext;
 import org.shizavisuals.event.EventManager;
 import org.shizavisuals.event.EventTarget;
@@ -20,10 +19,9 @@ import org.shizavisuals.utils.render.gui.Render2DUtil;
 import org.shizavisuals.utils.render.gui.UiFontStyle;
 import org.shizavisuals.utils.render.gui.UiFonts;
 
-import java.nio.ByteBuffer;
-import java.text.SimpleDateFormat;
+import java.time.LocalTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
-import java.util.Date;
 import java.util.List;
 
 public class DynamicIsland extends HudElement {
@@ -33,6 +31,7 @@ public class DynamicIsland extends HudElement {
 
     private static final float SCALE_MULTIPLIER = 1.5F;
     private static final String BG_KEY = "hud.island.bg";
+    private static final DateTimeFormatter TIME_FORMAT = DateTimeFormatter.ofPattern("HH:mm");
 
     private static String cycleBackground(String current) {
         return switch (current) {
@@ -52,7 +51,8 @@ public class DynamicIsland extends HudElement {
             new IslandColorAnimation(300L, ColorUtil.BLACK, IslandEasing.FIGMA_EASE_IN_OUT);
     private final IslandColorAnimation adaptColor =
             new IslandColorAnimation(300L, ColorUtil.WHITE, IslandEasing.LINEAR);
-    private long probeTimer;
+    private long cachedTimeSecond = -1L;
+    private String cachedTime = "--:--";
     private boolean useDark;
 
     private final PingPongStatus pingPong;
@@ -216,14 +216,11 @@ public class DynamicIsland extends HudElement {
         float currentRadius = (this.size.height / 2.0F) * (1.0F - widthRatio) + minRadius * widthRatio;
         currentRadius += (targetRadius - currentRadius) * this.extendingAnim.getValue();
 
-        String time = currentTime();
-        if (System.currentTimeMillis() - this.probeTimer > 500L) {
-            int pixel = readPixel(mc.getWindow().getWidth() / 2,
-                    mc.getWindow().getHeight() - Math.round(y + 5.0F * s));
-            int brightness = (ColorUtil.red(pixel) + ColorUtil.green(pixel) + ColorUtil.blue(pixel)) / 3;
-            this.useDark = brightness > 70;
-            this.probeTimer = System.currentTimeMillis();
-        }
+        long now = System.currentTimeMillis();
+        String time = currentTime(now);
+        // The old screen-pixel probe used glReadPixels and crashed the JVM on
+        // the extract phase (no GL context there under the Vulkan backend).
+        // The island now just keeps its static adapt switchover.
         this.adaptColor.update(this.useDark ? ColorUtil.BLACK : ColorUtil.WHITE);
         int elmtColorBase = this.adaptColor.getColor();
         int elmtColor = ColorUtil.multiplyAlpha(elmtColorBase, 1.0F - this.extendingAnim.getValue());
@@ -245,7 +242,7 @@ public class DynamicIsland extends HudElement {
 
         String backgroundMode = MenuConfigStore.getString(BG_KEY, "minimal");
         if (gameActive) {
-            drawLiquidGlass(x, y, s, currentRadius);
+            drawFrostedBar(x, y, s, currentRadius);
         } else if (backgroundMode.equals("gradient")) {
             int accentDark = ColorUtil.lerp(Theme.getAccent(), ColorUtil.BLACK, 0.25F);
             int fade = Math.round(216.75F / 255.0F * 255.0F);
@@ -319,11 +316,12 @@ public class DynamicIsland extends HudElement {
         }
     }
 
-    private void drawLiquidGlass(float x, float y, float s, float currentRadius) {
+    private void drawFrostedBar(float x, float y, float s, float currentRadius) {
         float extending = this.extendingAnim.getValue();
         Render2DUtil.rect(x - 1.0F * s, y - 1.0F * s, this.width + 2.0F * s, this.height + 2.0F * s)
                 .radius(currentRadius * s)
-                .glass(0.9F, 0.5F, (2.0F + 5.0F * extending) * s)
+                .color(ColorUtil.multiplyAlpha(Theme.Colors.BACKGROUND_PRIMARY_50, 0.9F))
+                .blur((2.0F + 5.0F * extending) * s)
                 .draw();
     }
 
@@ -605,19 +603,13 @@ public class DynamicIsland extends HudElement {
         return size * UiFontStyle.MEDIUM.letterSpacingEm();
     }
 
-    private static String currentTime() {
-        return new SimpleDateFormat("HH:mm").format(new Date());
-    }
-
-    private static int readPixel(int x, int y) {
-        ByteBuffer buffer = ByteBuffer.allocateDirect(4);
-        GL11.glReadPixels(x, y, 1, 1, GL11.GL_RGBA, GL11.GL_UNSIGNED_BYTE, buffer);
-        return ColorUtil.pack(
-                buffer.get(0) & 0xFF,
-                buffer.get(1) & 0xFF,
-                buffer.get(2) & 0xFF,
-                255
-        );
+    private String currentTime(long now) {
+        long second = Math.floorDiv(now, 1000L);
+        if (second != this.cachedTimeSecond) {
+            this.cachedTime = LocalTime.now().format(TIME_FORMAT);
+            this.cachedTimeSecond = second;
+        }
+        return this.cachedTime;
     }
 
     private static double mouseX(Minecraft mc) {

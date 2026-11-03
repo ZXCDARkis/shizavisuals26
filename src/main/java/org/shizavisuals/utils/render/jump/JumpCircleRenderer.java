@@ -60,6 +60,10 @@ public final class JumpCircleRenderer {
             .withCull(false)
             .build();
 
+    public static RenderPipeline pipeline() {
+        return PIPELINE;
+    }
+
     public void render(Vec3 center, float radius, float alpha, float time, int color, boolean glowEdge) {
         Minecraft mc = Minecraft.getInstance();
         if (mc.level == null || mc.player == null || radius <= 0.001F || alpha <= 0.003F) {

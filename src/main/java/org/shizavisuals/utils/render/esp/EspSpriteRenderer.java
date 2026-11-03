@@ -76,6 +76,49 @@ public final class EspSpriteRenderer {
     private static final RenderPipeline ALPHA = pipeline("alpha", false, false);
     private static final RenderPipeline ALPHA_THROUGH = pipeline("alpha_through", false, true);
 
+    public static List<RenderPipeline> pipelines() {
+        return List.of(ADDITIVE, ADDITIVE_THROUGH, ALPHA, ALPHA_THROUGH, MODEL);
+    }
+
+    /** Shared pipelines; Spirits reuses the same additive/alpha sprite shader. */
+    public static RenderPipeline additivePipeline() {
+        return ADDITIVE;
+    }
+
+    public static RenderPipeline additiveThroughPipeline() {
+        return ADDITIVE_THROUGH;
+    }
+
+    public static RenderPipeline alphaPipeline() {
+        return ALPHA;
+    }
+
+    /**
+     * Opaque-ish textured model pass (pets): TRANS LUCENT blend but with real
+     * depth test and depth writes, so a solid model does not paint itself over
+     * its own far side. QUADS topology pairs with the sequential index buffer.
+     */
+    private static final RenderPipeline MODEL = pipelineModel();
+
+    private static RenderPipeline pipelineModel() {
+        com.mojang.blaze3d.pipeline.RenderPipeline.Builder builder = RenderPipeline.builder()
+                .withLocation(Identifier.parse("shizavisuals:pipeline/world/esp_sprite_model"))
+                .withVertexShader(Identifier.parse("shizavisuals:core/esp_sprite"))
+                .withFragmentShader(Identifier.parse("shizavisuals:core/esp_sprite"))
+                .withBindGroupLayout(BindGroupLayouts.PROJECTION)
+                .withBindGroupLayout(LAYOUT)
+                .withVertexBinding(0, DefaultVertexFormat.POSITION_TEX_COLOR)
+                .withPrimitiveTopology(PrimitiveTopology.QUADS)
+                .withCull(false)
+                .withColorTargetState(new ColorTargetState(BlendFunction.TRANSLUCENT))
+                .withDepthStencilState(new DepthStencilState(CompareOp.GREATER_THAN_OR_EQUAL, true));
+        return builder.build();
+    }
+
+    public static RenderPipeline modelPipeline() {
+        return MODEL;
+    }
+
     public record Sprite(Vec3 position, float halfSize, int color, float rotation) {
         public Sprite(Vec3 position, float halfSize, int color) {
             this(position, halfSize, color, 0.0F);
@@ -183,26 +226,26 @@ public final class EspSpriteRenderer {
             Vector4f center = Render3DUtil.toViewSpace(sprite.position(), cameraPos, pose);
             float half = sprite.halfSize();
             int color = sprite.color();
-            float cos = (float) Math.cos(sprite.rotation());
-            float sin = (float) Math.sin(sprite.rotation());
+            float rotation = sprite.rotation();
+            float cos = (float) Math.cos(rotation);
+            float sin = (float) Math.sin(rotation);
 
-            addVertex(builder, center, rot(-half, -half, cos, sin), 0.0F, 0.0F, color);
-            addVertex(builder, center, rot(-half, half, cos, sin), 0.0F, 1.0F, color);
-            addVertex(builder, center, rot(half, half, cos, sin), 1.0F, 1.0F, color);
-            addVertex(builder, center, rot(-half, -half, cos, sin), 0.0F, 0.0F, color);
-            addVertex(builder, center, rot(half, half, cos, sin), 1.0F, 1.0F, color);
-            addVertex(builder, center, rot(half, -half, cos, sin), 1.0F, 0.0F, color);
+            float corner00X = -half * cos + half * sin;
+            float corner00Y = -half * sin - half * cos;
+            float corner01X = -half * cos - half * sin;
+            float corner01Y = -half * sin + half * cos;
+            float corner11X = half * cos - half * sin;
+            float corner11Y = half * sin + half * cos;
+            float corner10X = half * cos + half * sin;
+            float corner10Y = half * sin - half * cos;
+
+            builder.addVertex(center.x + corner00X, center.y + corner00Y, center.z).setUv(0.0F, 0.0F).setColor(color);
+            builder.addVertex(center.x + corner01X, center.y + corner01Y, center.z).setUv(0.0F, 1.0F).setColor(color);
+            builder.addVertex(center.x + corner11X, center.y + corner11Y, center.z).setUv(1.0F, 1.0F).setColor(color);
+            builder.addVertex(center.x + corner00X, center.y + corner00Y, center.z).setUv(0.0F, 0.0F).setColor(color);
+            builder.addVertex(center.x + corner11X, center.y + corner11Y, center.z).setUv(1.0F, 1.0F).setColor(color);
+            builder.addVertex(center.x + corner10X, center.y + corner10Y, center.z).setUv(1.0F, 0.0F).setColor(color);
         }
         return builder.build();
-    }
-
-    private static float[] rot(float x, float y, float cos, float sin) {
-        return new float[]{x * cos - y * sin, x * sin + y * cos};
-    }
-
-    private void addVertex(BufferBuilder builder, Vector4f center, float[] offset, float u, float v, int color) {
-        builder.addVertex(center.x + offset[0], center.y + offset[1], center.z)
-                .setUv(u, v)
-                .setColor(color);
     }
 }

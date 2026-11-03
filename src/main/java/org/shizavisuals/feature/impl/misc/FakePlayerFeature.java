@@ -4,6 +4,7 @@ import com.mojang.authlib.GameProfile;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.player.RemotePlayer;
+import net.minecraft.network.Connection;
 import net.minecraft.network.protocol.game.ClientboundExplodePacket;
 import net.minecraft.network.protocol.game.ServerboundInteractPacket;
 import net.minecraft.sounds.SoundEvents;
@@ -16,8 +17,10 @@ import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 
+import org.shizavisuals.context.MinecraftContext;
 import org.shizavisuals.event.EventTarget;
 import org.shizavisuals.event.events.game.GameTickEvent;
+import org.shizavisuals.event.events.lifecycle.WorldJoinEvent;
 import org.shizavisuals.event.events.lifecycle.WorldLeaveEvent;
 import org.shizavisuals.event.events.packet.PacketReceiveEvent;
 import org.shizavisuals.event.events.packet.PacketSendEvent;
@@ -31,7 +34,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
-public final class FakePlayerFeature extends Feature {
+public final class FakePlayerFeature extends Feature implements MinecraftContext {
     public static final UUID HEROBRINE_UUID = UUID.nameUUIDFromBytes(
             "OfflinePlayer:Herobrine".getBytes(StandardCharsets.UTF_8)
     );
@@ -44,6 +47,7 @@ public final class FakePlayerFeature extends Feature {
     public final BooleanSetting respawnOnDeath = register(new BooleanSetting("Респавн", true));
 
     private RemotePlayer fakePlayer;
+    private volatile long worldGeneration;
 
     private final List<PlayerState> positions = new ArrayList<>();
     private int movementTick;
@@ -162,57 +166,98 @@ public final class FakePlayerFeature extends Feature {
 
     @EventTarget
     public void onPacketReceive(PacketReceiveEvent event) {
-        if (event.getPhase() != PacketReceiveEvent.Phase.PRE) {
+        if (event.getPhase() != PacketReceiveEvent.Phase.PRE
+                || !this.isEnabled()
+                || !(event.getPacket() instanceof ClientboundExplodePacket packet)) {
             return;
         }
         Minecraft mc = Minecraft.getInstance();
-        if (mc.level == null || fakePlayer == null) {
-            return;
+        Connection connection = event.getConnection();
+        long generation = this.worldGeneration;
+        if (mc.isSameThread()) {
+            handleExplosion(mc, packet, connection, generation);
+        } else {
+            mc.execute(() -> handleExplosion(mc, packet, connection, generation));
         }
-        if (!(event.getPacket() instanceof ClientboundExplodePacket)) {
-            return;
-        }
-        if (fakePlayer.hurtTime != 0) {
-            return;
-        }
-
-        applyDamage(mc, 4.0F, mc.level.damageSources().generic());
     }
 
     @EventTarget
     public void onPacketSend(PacketSendEvent event) {
-        if (event.getPhase() != PacketSendEvent.Phase.PRE) {
+        if (event.getPhase() != PacketSendEvent.Phase.PRE
+                || !this.isEnabled()
+                || !(event.getPacket() instanceof ServerboundInteractPacket packet)) {
             return;
         }
         Minecraft mc = Minecraft.getInstance();
-        if (mc.level == null || fakePlayer == null || !takeDamage.getValue()) {
-            return;
+        Connection connection = event.getConnection();
+        long generation = this.worldGeneration;
+        if (mc.isSameThread()) {
+            handleInteraction(mc, packet, connection, generation);
+        } else {
+            mc.execute(() -> handleInteraction(mc, packet, connection, generation));
         }
-        if (!(event.getPacket() instanceof ServerboundInteractPacket packet)) {
-            return;
-        }
-        if (packet.entityId() != fakePlayer.getId()) {
-            return;
-        }
-        if (packet.location() != null || packet.hand() == null) {
-            return;
-        }
+    }
 
-        applyDamage(mc, 4.0F, mc.level.damageSources().playerAttack(mc.player));
+    private void handleExplosion(Minecraft mc, ClientboundExplodePacket packet,
+                                  Connection connection, long generation) {
+        if (!this.isEnabled() || !this.takeDamage.getValue()
+                || generation != this.worldGeneration || !isCurrentConnection(connection)
+                || mc.level == null || mc.player == null || fakePlayer == null || fakePlayer.hurtTime != 0) {
+            return;
+        }
+        if (isExplosionInRange(fakePlayer, packet)) {
+            applyDamage(mc, 4.0F, mc.level.damageSources().generic());
+        }
+    }
+
+    private void handleInteraction(Minecraft mc, ServerboundInteractPacket packet,
+                                   Connection connection, long generation) {
+        if (!this.isEnabled() || !this.takeDamage.getValue()
+                || generation != this.worldGeneration || !isCurrentConnection(connection)
+                || mc.level == null || mc.player == null || fakePlayer == null) {
+            return;
+        }
+        if (packet.entityId() == fakePlayer.getId() && packet.location() == null && packet.hand() != null) {
+            applyDamage(mc, 4.0F, mc.level.damageSources().playerAttack(mc.player));
+        }
+    }
+
+    private static boolean isExplosionInRange(RemotePlayer player, ClientboundExplodePacket packet) {
+        var center = packet.center();
+        double minX = player.getX() - player.getBbWidth() * 0.5D;
+        double maxX = player.getX() + player.getBbWidth() * 0.5D;
+        double minY = player.getY();
+        double maxY = player.getY() + player.getBbHeight();
+        double minZ = player.getZ() - player.getBbWidth() * 0.5D;
+        double maxZ = player.getZ() + player.getBbWidth() * 0.5D;
+        double closestX = Math.max(minX, Math.min(maxX, center.x));
+        double closestY = Math.max(minY, Math.min(maxY, center.y));
+        double closestZ = Math.max(minZ, Math.min(maxZ, center.z));
+        double dx = center.x - closestX;
+        double dy = center.y - closestY;
+        double dz = center.z - closestZ;
+        double range = Math.max(0.0F, packet.radius());
+        return dx * dx + dy * dy + dz * dz <= range * range;
+    }
+
+    @EventTarget
+    public void onWorldJoin(WorldJoinEvent event) {
+        this.worldGeneration++;
     }
 
     @EventTarget
     public void onWorldLeave(WorldLeaveEvent event) {
-        fakePlayer = null;
-        positions.clear();
-        deathTime = 0;
-        movementTick = 0;
-        needsRespawn = false;
-        respawnDelay = 0;
+        this.worldGeneration++;
+        this.fakePlayer = null;
+        this.positions.clear();
+        this.deathTime = 0;
+        this.movementTick = 0;
+        this.needsRespawn = false;
+        this.respawnDelay = 0;
     }
 
     private void applyDamage(Minecraft mc, float amount, net.minecraft.world.damagesource.DamageSource source) {
-        if (fakePlayer == null || mc.level == null) {
+        if (!this.takeDamage.getValue() || fakePlayer == null || mc.level == null) {
             return;
         }
 
@@ -313,6 +358,7 @@ public final class FakePlayerFeature extends Feature {
 
     @Override
     protected void onEnable() {
+        this.worldGeneration++;
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null || mc.level == null) {
             return;
@@ -332,6 +378,7 @@ public final class FakePlayerFeature extends Feature {
 
     @Override
     protected void onDisable() {
+        this.worldGeneration++;
         Minecraft mc = Minecraft.getInstance();
         if (mc.level != null) {
             removeFakePlayer();

@@ -6,12 +6,16 @@ import org.shizavisuals.feature.impl.visual.JumpCirclesFeature;
 import org.shizavisuals.feature.impl.visual.KillEffectFeature;
 import org.shizavisuals.feature.impl.visual.MotionBlurFeature;
 import org.shizavisuals.feature.impl.visual.PopChamsFeature;
+import org.shizavisuals.feature.impl.visual.PuddlesFeature;
+import org.shizavisuals.feature.impl.visual.SpiritsFeature;
 import org.shizavisuals.feature.impl.visual.TargetEsp;
+import org.shizavisuals.feature.impl.visual.TntEffectFeature;
 
 import org.shizavisuals.feature.impl.visual.TrajectoriesFeature;
 import org.shizavisuals.feature.impl.visual.WorldParticlesFeature;
 import org.shizavisuals.feature.impl.visual.WorldTweaksFeature;
 import org.shizavisuals.utils.render.chams.PopChamsRenderer;
+import org.shizavisuals.utils.render.tnt.TntEffectRenderer;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -88,6 +92,20 @@ public final class WorldEffects {
                 (feature, context) -> feature.renderWorld(context.tickDelta())
         ));
 
+        // Visually world geometry: drawn after target ESP layers, before the
+        // saturation/motion-blur post passes can wash them out.
+        register(WorldEffect.direct(
+                SpiritsFeature::getEnabled,
+                (feature, context) -> feature.renderWorld(context.tickDelta())
+        ));
+
+        // Pets are world geometry too: drawn while the level depth is intact so
+        // blocks hide them like everything else.
+        register(WorldEffect.direct(
+                org.shizavisuals.feature.impl.visual.PetsFeature::getEnabled,
+                (feature, context) -> feature.renderWorld(context.tickDelta())
+        ));
+
         register(WorldEffect.lazy(
                 () -> gate(WorldTweaksFeature.getEnabled(), WorldTweaksFeature::usesSaturation),
                 WorldTweaksRenderer::new,
@@ -102,6 +120,25 @@ public final class WorldEffects {
                 MotionBlurRenderer::release
         ));
 
+        register(WorldEffect.lazy(
+                () -> gate(PuddlesFeature.getEnabled(), PuddlesFeature::usesPuddles),
+                PuddlesRenderer::new,
+                (feature, renderer, context) -> renderer.render(feature, context.cameraRenderState()),
+                PuddlesRenderer::release
+        ));
+
+        // Needs a tick hook (smoke + shake decay) and has to publish itself
+        // through a static holder so the explosion-packet and camera mixins can
+        // reach it without going through the event bus.
+        register(WorldEffect.lazy(
+                TntEffectFeature::getEnabled,
+                TntEffectRenderer::new,
+                (feature, renderer, context) -> {
+                    renderer.tick(feature);
+                    renderer.renderWorld(feature, context.cameraRenderState(), context.projectionMatrix());
+                },
+                TntEffectRenderer::release
+        ));
     }
 
     public static void register(WorldEffect effect) {

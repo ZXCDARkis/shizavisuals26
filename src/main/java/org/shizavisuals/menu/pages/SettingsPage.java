@@ -60,7 +60,11 @@ public final class SettingsPage extends PageComponent {
     private static final int CONTENT_TOP = 200;
 
     private static final int BACKGROUND_ROW_Y = 405;
-    private static final int CONTENT_BOTTOM = 628;
+    private static final int CORNER_ROW_Y = 459;
+    private static final int SOUND_LABEL_Y = 535;
+    private static final int SOUND_CARD_Y = 553;
+    private static final int SOUND_ROW_Y = 565;
+    private static final int CONTENT_BOTTOM = 635;
 
     private final List<Component> children = new ArrayList<>();
     private final Map<String, MarqueeText> descriptionLabels = new HashMap<>();
@@ -283,11 +287,11 @@ public final class SettingsPage extends PageComponent {
         sectionLabel(536, 214, "Interface");
 
         sectionCard(16, 234, 488, 171);
-        sectionCard(520, 234, 488, 279);
+        sectionCard(520, 234, 488, 283);
         sectionLabel(32, 423, "Performance");
-        sectionCard(16, 442, 488, 174);
-        sectionLabel(536, 532, "Controls");
-        sectionCard(520, 550, 488, 66);
+        sectionCard(16, 442, 488, 299);
+        sectionLabel(536, SOUND_LABEL_Y, "Controls");
+        sectionCard(520, SOUND_CARD_Y, 488, 66);
 
         settingText(32, 246, 39, "Client Color",
                 "Adjust the main accent color of the interface.", ACCENT_SWATCH_X - 12);
@@ -345,11 +349,11 @@ public final class SettingsPage extends PageComponent {
         settingDivider(536, dividerY(351, 42, 405, 42));
         settingText(536, BACKGROUND_ROW_Y, 42,
                 "Menu Background", "Animated shader behind the menu content.", 868);
-        settingDivider(536, dividerY(405, 42, 459, 42));
-        settingText(536, 459, 42, "Rounded Corners",
+        settingDivider(536, dividerY(405, 42, CORNER_ROW_Y, 42));
+        settingText(536, CORNER_ROW_Y, 42, "Rounded Corners",
                 "Select the corner smoothness for menu elements.", 868);
 
-        settingText(536, 562, 42, "Toggle Sound",
+        settingText(536, SOUND_ROW_Y, 42, "Toggle Sound",
                 "Enable or disable audio feedback for clicks.", 962);
 
         for (Component child : this.children) {
@@ -384,14 +388,14 @@ public final class SettingsPage extends PageComponent {
         this.reduceShadowsToggle.place(this, 470, oy(520), 18, 18).style(ToggleComponent.Style.CIRCLE, Theme.Colors.CONTROL, accent).alpha(this.progress).circle();
         this.cacheUiToggle.place(this, 470, oy(574), 18, 18).style(ToggleComponent.Style.CIRCLE, Theme.Colors.CONTROL, accent).alpha(this.progress).circle();
 
-        this.soundToggle.place(this, 974, oy(574), 18, 18).style(ToggleComponent.Style.CIRCLE, Theme.Colors.CONTROL, accent).alpha(this.progress).circle();
+        this.soundToggle.place(this, 974, oy(SOUND_ROW_Y + 12), 18, 18).style(ToggleComponent.Style.CIRCLE, Theme.Colors.CONTROL, accent).alpha(this.progress).circle();
 
         this.resetButton.place(this, RESET_BUTTON_X, RESET_BUTTON_Y, RESET_BUTTON_SIZE, this.mouseX, this.mouseY)
                 .alpha(this.progress);
         placePillRight(this.fpsModeDropdown, FPS_MODES[this.fpsMode], TOP_DROPDOWN_RIGHT, TOP_DROPDOWN_Y);
         placeValueRight(this.languageDropdown, 488, oy(centeredControlY(351, 42, Theme.Sizes.DROPDOWN_VALUE_HEIGHT)));
         placePillRight(this.blurModeDropdown, BLUR_MODES[this.blurMode], 992, oy(centeredControlY(297, 42, 36)));
-        placeValueRight(this.roundedModeDropdown, 992, oy(centeredControlY(459, 42, Theme.Sizes.DROPDOWN_VALUE_HEIGHT)));
+        placeValueRight(this.roundedModeDropdown, 992, oy(centeredControlY(CORNER_ROW_Y, 42, Theme.Sizes.DROPDOWN_VALUE_HEIGHT)));
         placeValueRight(this.backgroundDropdown, 992, oy(centeredControlY(BACKGROUND_ROW_Y, 42, Theme.Sizes.DROPDOWN_VALUE_HEIGHT)));
 
         int popupWidth = Theme.Sizes.DROPDOWN_POPUP_WIDTH;
@@ -401,7 +405,7 @@ public final class SettingsPage extends PageComponent {
                 this.mouseX, this.mouseY, this.progress);
         this.blurPopup.place(this, 992 - popupWidth, oy(centeredControlY(297, 42, 36) + 43), this.mouseX, this.mouseY, this.progress);
         this.cornersPopup.place(this, 992 - popupWidth,
-                oy(centeredControlY(459, 42, Theme.Sizes.DROPDOWN_VALUE_HEIGHT) + Theme.Sizes.DROPDOWN_VALUE_HEIGHT + Theme.Sizes.DROPDOWN_POPUP_OFFSET_Y),
+                oy(centeredControlY(CORNER_ROW_Y, 42, Theme.Sizes.DROPDOWN_VALUE_HEIGHT) + Theme.Sizes.DROPDOWN_VALUE_HEIGHT + Theme.Sizes.DROPDOWN_POPUP_OFFSET_Y),
                 this.mouseX, this.mouseY, this.progress);
         this.backgroundPopup.place(this, 992 - popupWidth,
                 oy(centeredControlY(BACKGROUND_ROW_Y, 42, Theme.Sizes.DROPDOWN_VALUE_HEIGHT) + Theme.Sizes.DROPDOWN_VALUE_HEIGHT + Theme.Sizes.DROPDOWN_POPUP_OFFSET_Y),

@@ -44,8 +44,6 @@ public abstract class MinecraftMixin {
 
     @Inject(method = "tick", at = @At("HEAD"), cancellable = true)
     private void onTick(CallbackInfo ci) {
-        org.shizavisuals.ShizaVisuals.noteTick();
-        org.shizavisuals.ShizaVisuals.installWindowCloseHook();
         if (!EventManager.hasListeners(GameTickEvent.class)) {
             return;
         }
@@ -119,27 +117,6 @@ public abstract class MinecraftMixin {
     private void shizavisuals$captureMainThread(CallbackInfo ci) {
         org.shizavisuals.ShizaVisuals.captureMainThread(Thread.currentThread());
         org.shizavisuals.ShizaVisuals.markClientStarted();
-        try {
-            long h = org.lwjgl.glfw.GLFW.glfwGetCurrentContext();
-            if (h != 0L) {
-                org.shizavisuals.ShizaVisuals.setWindowHandle(h);
-            }
-            org.shizavisuals.ShizaVisuals.installWindowCloseHook();
-        } catch (Throwable ignored) {
-        }
-    }
-
-    @Inject(method = "stop", at = @At("TAIL"))
-    private void shizavisuals$forceExit(CallbackInfo ci) {
-        try { org.shizavisuals.webpanel.WebPanelAwtGuard.shutdown(); } catch (Throwable ignored) {}
-        try { org.shizavisuals.webpanel.WebPanelStream.shutdown(); } catch (Throwable ignored) {}
-        try { org.shizavisuals.hud.island.MusicStatus.shutdown(); } catch (Throwable ignored) {}
-        Thread watchdog = new Thread(() -> {
-            try { Thread.sleep(800L); } catch (InterruptedException ignored) {}
-            try { Runtime.getRuntime().halt(0); } catch (Throwable ignored) {}
-        }, "ShizaVisuals-ForceExit");
-        watchdog.setDaemon(true);
-        watchdog.start();
     }
 
     @Inject(method = "onResourceLoadFinished", at = @At("TAIL"))

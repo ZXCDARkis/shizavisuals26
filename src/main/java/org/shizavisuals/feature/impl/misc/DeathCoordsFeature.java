@@ -13,7 +13,7 @@ public final class DeathCoordsFeature extends Feature {
     private boolean reported;
 
     public DeathCoordsFeature() {
-        super("DeathCoords", "Shows your coordinates on death", FeatureCategory.MISC, BindSetting.UNBOUND);
+        super("DeathCoords", "Показывает координаты при смерти", FeatureCategory.MISC, BindSetting.UNBOUND);
     }
 
     @EventTarget

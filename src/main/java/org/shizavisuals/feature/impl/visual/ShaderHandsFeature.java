@@ -119,7 +119,7 @@ public final class ShaderHandsFeature extends Feature {
     ).configKey("render.armtweaks.fill.bothHands"));
 
     public ShaderHandsFeature() {
-        super("ShaderHands", "Renders a colored silhouette over your first-person hands", FeatureCategory.VISUAL, BindSetting.UNBOUND);
+        super("ShaderHands", "Цветной силуэт поверх рук от первого лица", FeatureCategory.VISUAL, BindSetting.UNBOUND);
     }
 
     public int resolvedColor() {

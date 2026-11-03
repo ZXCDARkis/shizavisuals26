@@ -100,8 +100,11 @@ public final class Theme {
     public static final class Sizes {
         public static final int HEADER_HEIGHT = 56;
         public static final int DEFAULT_PANEL_RADIUS_INDEX = 1;
-        public static final int[] PANEL_RADII = {6, 12, 20};
-        public static final int MODULE_CARD_RADIUS = 8;
+        // Corner radii. Bigger and rounder than a typical desktop UI: iOS leans on large
+        // continuous corners, and the glass shader draws them as superellipses
+        // rather than circular arcs, so a tight radius here looks pinched.
+        public static final int[] PANEL_RADII = {10, 18, 28};
+        public static final int MODULE_CARD_RADIUS = 12;
         public static final int MODULE_CARD_HEADER_HEIGHT = 64;
         public static final int MODULE_CARD_ROW_HEIGHT = 40;
         public static final int MODULE_CARD_PADDING = 16;

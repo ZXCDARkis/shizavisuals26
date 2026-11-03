@@ -1,7 +1,11 @@
 package org.shizavisuals.hud.island;
 
+import net.minecraft.client.Minecraft;
+import net.minecraft.network.Connection;
+import org.shizavisuals.context.MinecraftContext;
 import org.shizavisuals.event.EventManager;
 import org.shizavisuals.event.EventTarget;
+import org.shizavisuals.event.events.lifecycle.WorldJoinEvent;
 import org.shizavisuals.event.events.lifecycle.WorldLeaveEvent;
 import org.shizavisuals.event.events.packet.PacketReceiveEvent;
 import net.minecraft.network.protocol.game.ClientboundSystemChatPacket;
@@ -9,16 +13,18 @@ import org.shizavisuals.utils.ColorUtil;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-public class EventStatus extends TimerStatus {
+public class EventStatus extends TimerStatus implements MinecraftContext {
     private static final Pattern EVENT_NAME = Pattern.compile("\\[([^\\]]+)\\]");
-    private static final Pattern APPEAR_COORDS = Pattern.compile("координатах\\s+(-?\\d+)\\s+(-?\\d+)\\s+(-?\\d+)");
     private static final Pattern COORDS_LINE = Pattern.compile("координаты:?\\s*(-?\\d+)\\s+(-?\\d+)\\s+(-?\\d+)", Pattern.CASE_INSENSITIVE);
+    private static final Pattern APPEAR_COORDS = Pattern.compile("координатах\\s+(-?\\d+)\\s+(-?\\d+)\\s+(-?\\d+)", Pattern.CASE_INSENSITIVE);
+    private static final EventType[] EVENT_TYPES = EventType.values();
 
     private final List<ActiveEvent> activeEvents = new ArrayList<>();
-    private long startedAt = System.currentTimeMillis();
+    private volatile long worldGeneration;
     private String pendingEvent;
 
     private String manualLabel;
@@ -33,55 +39,125 @@ public class EventStatus extends TimerStatus {
 
     @EventTarget
     public void onPacketReceive(PacketReceiveEvent event) {
-        if (!(event.getPacket() instanceof ClientboundSystemChatPacket packet)) {
+        if (event.getPhase() != PacketReceiveEvent.Phase.PRE
+                || !this.isEnabled()
+                || !(event.getPacket() instanceof ClientboundSystemChatPacket packet)) {
             return;
         }
         String raw = packet.content().getString();
+        if (!isPotentiallyRelevantMessage(raw)) {
+            return;
+        }
+        String normalized = raw.toLowerCase(Locale.ROOT);
+        if (!isRelevantMessage(normalized)) {
+            return;
+        }
+        Minecraft mc = Minecraft.getInstance();
+        Connection connection = event.getConnection();
+        long generation = this.worldGeneration;
+        if (mc.isSameThread()) {
+            handlePacket(mc, raw, normalized, connection, generation);
+        } else {
+            mc.execute(() -> handlePacket(mc, raw, normalized, connection, generation));
+        }
+    }
+
+    private void handlePacket(Minecraft mc, String raw, String normalized,
+                               Connection connection, long generation) {
+        if (!this.isEnabled() || generation != this.worldGeneration
+                || !isCurrentConnection(connection) || mc.level == null) {
+            return;
+        }
         String message = raw.replaceAll("\\n", " ")
                 .replaceAll("[^\\p{L}\\p{N}\\s\\[\\]:.-]", "")
                 .replaceAll("\\s{2,}", " ")
                 .trim();
-        if (raw.contains("Появился")) {
+        if (normalized.contains("появился")) {
             Matcher eventMatcher = EVENT_NAME.matcher(message);
             Matcher coordMatcher = APPEAR_COORDS.matcher(message);
             if (eventMatcher.find() && coordMatcher.find()) {
-                String eventName = eventMatcher.group(1);
-                for (EventType value : EventType.values()) {
-                    if (!eventName.toLowerCase().contains(value.getName().toLowerCase())) {
+                String eventName = eventMatcher.group(1).toLowerCase(Locale.ROOT);
+                for (EventType value : EVENT_TYPES) {
+                    if (!eventName.contains(value.normalizedName())) {
                         continue;
                     }
                     this.activeEvents.removeIf(e -> e.type() == value);
-                    this.activeEvents.add(new ActiveEvent(value));
-                    this.startedAt = System.currentTimeMillis();
+                    this.activeEvents.add(new ActiveEvent(value, System.currentTimeMillis()));
                     break;
                 }
             }
         } else {
-            for (EventType value : EventType.values()) {
-                if (!message.equalsIgnoreCase(value.getName())) {
-                    continue;
+            for (EventType value : EVENT_TYPES) {
+                if (message.equalsIgnoreCase(value.getName())) {
+                    this.pendingEvent = value.getName();
+                    break;
                 }
-                this.pendingEvent = value.getName();
-                break;
             }
             Matcher coordMatcher = COORDS_LINE.matcher(message);
-            if (message.toLowerCase().startsWith("координаты") && coordMatcher.find() && this.pendingEvent != null) {
-                for (EventType value : EventType.values()) {
-                    if (!this.pendingEvent.equalsIgnoreCase(value.getName())) {
-                        continue;
+            if (normalized.startsWith("координаты")
+                    && coordMatcher.find()
+                    && this.pendingEvent != null) {
+                for (EventType value : EVENT_TYPES) {
+                    if (this.pendingEvent.equalsIgnoreCase(value.getName())) {
+                        this.activeEvents.removeIf(e -> e.type() == value);
+                        this.activeEvents.add(new ActiveEvent(value, System.currentTimeMillis()));
+                        break;
                     }
-                    this.activeEvents.removeIf(e -> e.type() == value);
-                    this.activeEvents.add(new ActiveEvent(value));
-                    this.startedAt = System.currentTimeMillis();
-                    break;
                 }
                 this.pendingEvent = null;
             }
         }
     }
 
+    private static boolean isPotentiallyRelevantMessage(String raw) {
+        if (raw.contains("Появился") || raw.contains("появился")
+                || raw.contains("координаты") || raw.contains("Координаты")) {
+            return true;
+        }
+        for (EventType value : EVENT_TYPES) {
+            if (raw.contains(value.getName())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean isRelevantMessage(String normalized) {
+        if (normalized.contains("появился") || normalized.contains("координаты")) {
+            return true;
+        }
+        for (EventType value : EVENT_TYPES) {
+            if (normalized.contains(value.normalizedName())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    @Override
+    public void setEnabled(boolean value) {
+        if (this.isEnabled() != value) {
+            this.worldGeneration++;
+            if (!value) {
+                clearWorldState();
+            }
+        }
+        super.setEnabled(value);
+    }
+
+    @EventTarget
+    public void onWorldJoin(WorldJoinEvent event) {
+        this.worldGeneration++;
+        clearWorldState();
+    }
+
     @EventTarget
     public void onWorldLeave(WorldLeaveEvent event) {
+        this.worldGeneration++;
+        clearWorldState();
+    }
+
+    private void clearWorldState() {
         this.activeEvents.clear();
         this.pendingEvent = null;
         this.manualUntil = 0L;
@@ -97,11 +173,11 @@ public class EventStatus extends TimerStatus {
     @Override
     public void draw(float alpha) {
         long now = System.currentTimeMillis();
-        this.activeEvents.removeIf(active -> now - this.startedAt >= active.type().getTime());
+        this.activeEvents.removeIf(active -> now - active.startedAt() >= active.type().getTime());
 
         if (!this.activeEvents.isEmpty()) {
             ActiveEvent current = this.activeEvents.getFirst();
-            long elapsed = now - this.startedAt;
+            long elapsed = now - current.startedAt();
             long remaining = current.type().getTime() - elapsed;
             if (remaining <= 0L) {
                 return;
@@ -143,7 +219,7 @@ public class EventStatus extends TimerStatus {
                 && this.manualSeconds > 0;
     }
 
-    private record ActiveEvent(EventType type) {
+    private record ActiveEvent(EventType type, long startedAt) {
     }
 
     enum EventType {
@@ -158,15 +234,21 @@ public class EventStatus extends TimerStatus {
         MYSTERIOUS_SHIP("Таинственный корабль", 300_000L);
 
         private final String name;
+        private final String normalizedName;
         private final long time;
 
         EventType(String name, long time) {
             this.name = name;
+            this.normalizedName = name.toLowerCase(Locale.ROOT);
             this.time = time;
         }
 
         public String getName() {
             return this.name;
+        }
+
+        public String normalizedName() {
+            return this.normalizedName;
         }
 
         public long getTime() {

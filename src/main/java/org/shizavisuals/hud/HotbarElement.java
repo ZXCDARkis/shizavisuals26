@@ -110,9 +110,9 @@ public final class HotbarElement extends HudElement {
         this.renderedTop = this.y;
         float alpha = appearAlpha();
 
-        Render2DUtil.rect(this.x, this.y, this.width, this.height)
-                .color(ColorUtil.multiplyAlpha(ColorUtil.rgba(22, 22, 22, 230), alpha))
-                .radius(this.style.radius() * unit)
+        Render2DUtil.surface(this.x, this.y, this.width, this.height,
+                ColorUtil.multiplyAlpha(ColorUtil.rgba(22, 22, 22, 230), alpha),
+                this.style.radius() * unit, 32.0F * unit)
                 .border(Math.max(0.5F, 0.5F * unit), ColorUtil.multiplyAlpha(Theme.Colors.OUTLINES_MEDIUM, alpha))
                 .draw();
 

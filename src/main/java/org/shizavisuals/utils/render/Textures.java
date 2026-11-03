@@ -62,6 +62,7 @@ public final class Textures {
         public static final Identifier CHEVRON_LEFT = svg("header/chevron_left");
         public static final Identifier CHEVRON_RIGHT = svg("header/chevron_right");
         public static final Identifier SETTINGS = svg("header/settings");
+        public static final Identifier COSMETICS = svg("header/cosmetics");
         public static final Identifier FRIENDS = svg("header/friends");
         public static final Identifier PROFILE_ADD = svg("header/profile_add");
         public static final Identifier DOCUMENT = svg("header/document");

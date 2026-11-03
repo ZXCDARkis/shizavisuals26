@@ -18,7 +18,7 @@ public final class SwingAnimationFeature extends Feature {
     public final NumberSetting speed = register(new NumberSetting("Speed", 6.0, 1.0, 20.0, 1.0, ""));
 
     public SwingAnimationFeature() {
-        super("SwingAnimation", "Custom hand swing animation", FeatureCategory.VISUAL, BindSetting.UNBOUND);
+        super("SwingAnimation", "Своя анимация размаха рукой", FeatureCategory.VISUAL, BindSetting.UNBOUND);
     }
 
     public Style style() {

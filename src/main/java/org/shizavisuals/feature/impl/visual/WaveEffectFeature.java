@@ -1,12 +1,16 @@
 package org.shizavisuals.feature.impl.visual;
 
-import net.minecraft.client.Minecraft;import net.minecraft.core.BlockPos;
+import net.minecraft.client.Minecraft;
+import net.minecraft.core.BlockPos;
+import net.minecraft.network.Connection;
 import net.minecraft.network.protocol.game.ClientboundEntityEventPacket;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
+import org.shizavisuals.context.MinecraftContext;
 import org.shizavisuals.event.EventTarget;
 import org.shizavisuals.event.events.game.AttackEvent;
 import org.shizavisuals.event.events.game.GameTickEvent;
+import org.shizavisuals.event.events.lifecycle.WorldJoinEvent;
 import org.shizavisuals.event.events.lifecycle.WorldLeaveEvent;
 import org.shizavisuals.event.events.packet.PacketReceiveEvent;
 import org.shizavisuals.feature.Feature;
@@ -25,12 +29,18 @@ import org.shizavisuals.utils.render.world.WorldMeshRenderer.WorldMesh;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.CopyOnWriteArrayList;
 
-public final class WaveEffectFeature extends Feature {
+public final class WaveEffectFeature extends Feature implements MinecraftContext {
     private static final float MAX_RADIUS = 15.0F;
     private static final float WAVE_THICKNESS = 1.25F;
     private static final long DURATION_MS = 1500L;
+    private static final int MAX_ACTIVE_WAVES = 4;
+    private static final Vec3 AXIS_X = new Vec3(1.0D, 0.0D, 0.0D);
+    private static final Vec3 NEGATIVE_AXIS_X = new Vec3(-1.0D, 0.0D, 0.0D);
+    private static final Vec3 AXIS_Y = new Vec3(0.0D, 1.0D, 0.0D);
+    private static final Vec3 NEGATIVE_AXIS_Y = new Vec3(0.0D, -1.0D, 0.0D);
+    private static final Vec3 AXIS_Z = new Vec3(0.0D, 0.0D, 1.0D);
+    private static final Vec3 NEGATIVE_AXIS_Z = new Vec3(0.0D, 0.0D, -1.0D);
 
     private final MultiSelectSetting display = register(new MultiSelectSetting(
             "Display",
@@ -45,7 +55,10 @@ public final class WaveEffectFeature extends Feature {
     private final ColorSetting totemColor = register(new ColorSetting("Totem Color", 0xFFFFD700)
             .visibleWhen(() -> !this.display.isSelected("Totem") || this.syncWithTheme.getValue()));
 
-    private final List<Wave> waves = new CopyOnWriteArrayList<>();
+    private final List<Wave> waves = new ArrayList<>();
+    private final List<PlaneRect> fills = new ArrayList<>(1024);
+    private final List<Line> outlines = new ArrayList<>(2048);
+    private volatile long worldGeneration;
     private boolean wasOnGround = true;
 
     public WaveEffectFeature() {
@@ -58,7 +71,7 @@ public final class WaveEffectFeature extends Feature {
 
     @EventTarget
     public void onAttack(AttackEvent event) {
-        if (!this.display.isSelected("Attack")) {
+        if (!this.isEnabled() || !this.display.isSelected("Attack")) {
             return;
         }
         Minecraft mc = Minecraft.getInstance();
@@ -78,6 +91,7 @@ public final class WaveEffectFeature extends Feature {
 
     @EventTarget
     public void onTick(GameTickEvent event) {
+        this.waves.removeIf(wave -> wave.progress() >= 1.0F);
         if (!this.display.isSelected("Jump")) {
             this.wasOnGround = true;
             return;
@@ -95,25 +109,56 @@ public final class WaveEffectFeature extends Feature {
 
     @EventTarget
     public void onPacketReceive(PacketReceiveEvent event) {
-        if (event.getPhase() != PacketReceiveEvent.Phase.PRE || !this.display.isSelected("Totem")) {
+        if (event.getPhase() != PacketReceiveEvent.Phase.PRE
+                || !this.isEnabled()
+                || !(event.getPacket() instanceof ClientboundEntityEventPacket packet)
+                || packet.getEventId() != 35) {
             return;
         }
         Minecraft mc = Minecraft.getInstance();
-        if (mc.player == null || mc.level == null) {
+        Connection connection = event.getConnection();
+        long generation = this.worldGeneration;
+        if (mc.isSameThread()) {
+            handleTotemPacket(mc, packet, connection, generation);
+        } else {
+            mc.execute(() -> handleTotemPacket(mc, packet, connection, generation));
+        }
+    }
+
+    private void handleTotemPacket(Minecraft mc, ClientboundEntityEventPacket packet,
+                                   Connection connection, long generation) {
+        if (!this.isEnabled() || !this.display.isSelected("Totem")
+                || generation != this.worldGeneration || !isCurrentConnection(connection)
+                || mc.player == null || mc.level == null || packet.getEntity(mc.level) != mc.player) {
             return;
         }
-        if (!(event.getPacket() instanceof ClientboundEntityEventPacket packet)) {
-            return;
-        }
-        if (packet.getEventId() != 35 || packet.getEntity(mc.level) != mc.player) {
-            return;
-        }
-        this.spawn(mc.player.position(), this.triggerColor(this.totemColor.getValue()));
+        spawn(mc.player.position(), this.triggerColor(this.totemColor.getValue()), connection, generation);
+    }
+
+    @EventTarget
+    public void onWorldJoin(WorldJoinEvent event) {
+        this.worldGeneration++;
+        this.waves.clear();
     }
 
     @EventTarget
     public void onWorldLeave(WorldLeaveEvent event) {
+        this.worldGeneration++;
         this.waves.clear();
+    }
+
+    @Override
+    protected void onEnable() {
+        this.worldGeneration++;
+        this.waves.clear();
+        this.wasOnGround = true;
+    }
+
+    @Override
+    protected void onDisable() {
+        this.worldGeneration++;
+        this.waves.clear();
+        this.wasOnGround = true;
     }
 
     private int triggerColor(int settingColor) {
@@ -121,22 +166,50 @@ public final class WaveEffectFeature extends Feature {
     }
 
     private void spawn(Vec3 pos, int color) {
-        Minecraft mc = Minecraft.getInstance();
-        if (mc.level == null || pos == null) {
+        spawn(pos, color, null, this.worldGeneration);
+    }
+
+    private void spawn(Vec3 pos, int color, Connection connection, long generation) {
+        if (pos == null || !this.isEnabled()) {
             return;
         }
-        this.waves.add(new Wave(mc, pos, color));
+        Minecraft mc = Minecraft.getInstance();
+        Runnable action = () -> {
+            if (!this.isEnabled() || generation != this.worldGeneration
+                    || !isCurrentConnection(connection) || mc.level == null) {
+                return;
+            }
+            while (this.waves.size() >= MAX_ACTIVE_WAVES) {
+                this.waves.remove(0);
+            }
+            this.waves.add(new Wave(mc, pos, color));
+        };
+        if (mc.isSameThread()) {
+            action.run();
+        } else {
+            mc.execute(action);
+        }
     }
 
     public void renderWorld() {
         Minecraft mc = Minecraft.getInstance();
-        if (mc.player == null || mc.level == null || this.waves.isEmpty()) {
+        if (!this.isEnabled() || mc.player == null || mc.level == null || this.waves.isEmpty()) {
             return;
         }
-        for (Wave wave : this.waves) {
-            wave.render(mc);
+        this.fills.clear();
+        this.outlines.clear();
+        try {
+            Vec3 cameraPos = mc.gameRenderer.mainCamera().position();
+            for (Wave wave : this.waves) {
+                wave.render(cameraPos, this.fills, this.outlines);
+            }
+            if (!this.outlines.isEmpty()) {
+                WorldMeshRenderer.render(new WorldMesh(this.outlines, List.of(), this.fills), false);
+            }
+        } finally {
+            this.fills.clear();
+            this.outlines.clear();
         }
-        this.waves.removeIf(wave -> wave.progress() >= 1.0F);
     }
 
     private final class Wave {
@@ -153,6 +226,7 @@ public final class WaveEffectFeature extends Feature {
                 return;
             }
             BlockPos centerBlock = BlockPos.containing(pos);
+            BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
             for (int x = -15; x <= 15; x++) {
                 for (int z = -15; z <= 15; z++) {
                     double distance = Math.sqrt(x * (double) x + z * (double) z);
@@ -160,18 +234,16 @@ public final class WaveEffectFeature extends Feature {
                         continue;
                     }
                     for (int y = 3; y >= -10; y--) {
-                        BlockPos checkPos = centerBlock.offset(x, y, z);
-                        BlockState state = mc.level.getBlockState(checkPos);
+                        cursor.set(centerBlock.getX() + x, centerBlock.getY() + y, centerBlock.getZ() + z);
+                        BlockState state = mc.level.getBlockState(cursor);
                         if (state.isAir()) {
                             continue;
                         }
-                        // Skip flowers, grass tufts and other plants (no collision, not a fluid):
-                        // the wave should highlight soil and solid blocks instead.
-                        if (state.getCollisionShape(mc.level, checkPos).isEmpty()
+                        if (state.getCollisionShape(mc.level, cursor).isEmpty()
                                 && state.getFluidState().isEmpty()) {
                             continue;
                         }
-                        this.blocks.add(new BlockMark(checkPos, distance));
+                        this.blocks.add(new BlockMark(cursor.immutable(), distance));
                         break;
                     }
                 }
@@ -182,7 +254,7 @@ public final class WaveEffectFeature extends Feature {
             return Math.clamp((System.currentTimeMillis() - this.startTime) / (float) DURATION_MS, 0.0F, 1.0F);
         }
 
-        private void render(Minecraft mc) {
+        private void render(Vec3 camPos, List<PlaneRect> fills, List<Line> outlines) {
             float progress = progress();
             if (progress >= 1.0F || this.blocks.isEmpty()) {
                 return;
@@ -190,9 +262,6 @@ public final class WaveEffectFeature extends Feature {
 
             float currentRadius = progress * MAX_RADIUS;
             float fadeOut = progress > 0.8F ? (1.0F - (progress - 0.8F) / 0.2F) : 1.0F;
-
-            List<PlaneRect> fills = new ArrayList<>(1024);
-            List<Line> outlines = new ArrayList<>(2048);
 
             for (BlockMark block : this.blocks) {
                 float distDiff = Math.abs((float) block.distance() - currentRadius);
@@ -213,19 +282,14 @@ public final class WaveEffectFeature extends Feature {
 
                 int lineColor = ColorUtil.multiplyAlpha(this.color, alpha);
                 int fillColor = ColorUtil.multiplyAlpha(this.color, alpha * 0.3F);
-
-                Vec3 camPos = mc.gameRenderer.mainCamera().position();
-                Vec3 axisX = new Vec3(1.0D, 0.0D, 0.0D);
-                Vec3 axisY = new Vec3(0.0D, 1.0D, 0.0D);
-                Vec3 axisZ = new Vec3(0.0D, 0.0D, 1.0D);
                 Vec3 center = new Vec3(cx, cy, cz);
 
-                addFace(fills, camPos, center, axisX, axisY, axisZ, half, fillColor);
-                addFace(fills, camPos, center, axisX.scale(-1.0D), axisY, axisZ, half, fillColor);
-                addFace(fills, camPos, center, axisY, axisX, axisZ, half, fillColor);
-                addFace(fills, camPos, center, axisY.scale(-1.0D), axisX, axisZ, half, fillColor);
-                addFace(fills, camPos, center, axisZ, axisX, axisY, half, fillColor);
-                addFace(fills, camPos, center, axisZ.scale(-1.0D), axisX, axisY, half, fillColor);
+                addFace(fills, camPos, center, AXIS_X, AXIS_Y, AXIS_Z, half, fillColor);
+                addFace(fills, camPos, center, NEGATIVE_AXIS_X, AXIS_Y, AXIS_Z, half, fillColor);
+                addFace(fills, camPos, center, AXIS_Y, AXIS_X, AXIS_Z, half, fillColor);
+                addFace(fills, camPos, center, NEGATIVE_AXIS_Y, AXIS_X, AXIS_Z, half, fillColor);
+                addFace(fills, camPos, center, AXIS_Z, AXIS_X, AXIS_Y, half, fillColor);
+                addFace(fills, camPos, center, NEGATIVE_AXIS_Z, AXIS_X, AXIS_Y, half, fillColor);
 
                 Vec3 c1 = new Vec3(cx - half, cy - half, cz - half);
                 Vec3 c2 = new Vec3(cx + half, cy - half, cz - half);
@@ -248,21 +312,22 @@ public final class WaveEffectFeature extends Feature {
                 outlines.add(new Line(c3, c7, lineColor));
                 outlines.add(new Line(c4, c8, lineColor));
             }
-
-            if (!outlines.isEmpty()) {
-                WorldMeshRenderer.render(new WorldMesh(outlines, List.of(), fills), false);
-            }
         }
 
         private static final double FILL_EPSILON = 0.005D;
 
         private static void addFace(List<PlaneRect> fills, Vec3 camPos, Vec3 center,
                                     Vec3 outward, Vec3 tangentA, Vec3 tangentB, double half, int color) {
-            // Lift the quad slightly off the block surface: coplanar fills
-            // z-fight with the block texture and flicker.
-            Vec3 faceCenter = center.add(outward.scale(half + FILL_EPSILON));
-            Vec3 toCam = camPos.subtract(faceCenter);
-            if (toCam.dot(outward) <= 0.0D) {
+            double surfaceOffset = half + FILL_EPSILON;
+            Vec3 faceCenter = new Vec3(
+                    center.x + outward.x * surfaceOffset,
+                    center.y + outward.y * surfaceOffset,
+                    center.z + outward.z * surfaceOffset
+            );
+            double toCameraX = camPos.x - faceCenter.x;
+            double toCameraY = camPos.y - faceCenter.y;
+            double toCameraZ = camPos.z - faceCenter.z;
+            if (toCameraX * outward.x + toCameraY * outward.y + toCameraZ * outward.z <= 0.0D) {
                 return;
             }
             fills.add(new PlaneRect(faceCenter, tangentA, tangentB, half, half, color));

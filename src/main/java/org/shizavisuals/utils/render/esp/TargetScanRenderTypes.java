@@ -36,6 +36,10 @@ public final class TargetScanRenderTypes {
     private TargetScanRenderTypes() {
     }
 
+    public static RenderPipeline pipeline() {
+        return PIPELINE;
+    }
+
     public static RenderType scan(Identifier texture) {
         return CACHE.computeIfAbsent(texture, tex -> {
             RenderSetup setup = RenderSetup.builder(PIPELINE)

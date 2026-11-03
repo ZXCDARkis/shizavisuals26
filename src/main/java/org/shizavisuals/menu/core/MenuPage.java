@@ -4,6 +4,7 @@ public enum MenuPage {
     NONE,
     SEARCH,
     SETTINGS,
+    COSMETICS,
     FRIENDS,
     ACCOUNT_SWITCHER,
     CONFIGURATIONS;

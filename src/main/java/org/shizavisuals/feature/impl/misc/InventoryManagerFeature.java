@@ -19,7 +19,7 @@ public final class InventoryManagerFeature extends Feature {
     private static final int TICK_MS = 50;
 
     public InventoryManagerFeature() {
-        super("InvManager", "Save and auto-assemble inventory layouts",
+        super("InvManager", "Сохраняет и собирает раскладки инвентаря",
                 FeatureCategory.MISC, BindSetting.UNBOUND);
     }
 

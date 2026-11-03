@@ -23,13 +23,22 @@ public final class TextureRenderState extends UiElementRenderState {
     private final float v1;
     private final int color;
     private final float cornerRadius;
+    private final boolean transpose;
+    private final boolean linearSampler;
     private final float deviceScale;
 
     public TextureRenderState(Matrix3x2fc pose, Identifier textureId, boolean managed, float x, float y, float width, float height,
                               float u0, float v0, float u1, float v1, int color, float cornerRadius, ScreenRectangle scissor) {
+        this(pose, textureId, managed, false, x, y, width, height, u0, v0, u1, v1, color, cornerRadius, false, scissor);
+    }
+
+    /** Managed (TextureManager-registered) texture with a configurable sampler. */
+    public TextureRenderState(Matrix3x2fc pose, Identifier textureId, boolean managed, boolean linear, float x, float y, float width, float height,
+                              float u0, float v0, float u1, float v1, int color, float cornerRadius, boolean transpose, ScreenRectangle scissor) {
         super(pose, scissor, x, y, width, height);
         this.texture = managed ? null : GuiTexture.load(textureId);
         this.managedTextureId = managed ? textureId : null;
+        this.linearSampler = linear;
         this.x = x;
         this.y = y;
         this.width = width;
@@ -40,6 +49,7 @@ public final class TextureRenderState extends UiElementRenderState {
         this.v1 = v1;
         this.color = color;
         this.cornerRadius = cornerRadius;
+        this.transpose = transpose;
 
         float poseScale = Math.max(
                 (float) Math.hypot(pose.m00(), pose.m01()),
@@ -49,7 +59,7 @@ public final class TextureRenderState extends UiElementRenderState {
     }
 
     public TextureRenderState(Matrix3x2fc pose, Identifier textureId, float x, float y, float width, float height, int color, ScreenRectangle scissor) {
-        this(pose, textureId, false, x, y, width, height, 0.0F, 0.0F, 1.0F, 1.0F, color, 0.0F, scissor);
+        this(pose, textureId, false, false, x, y, width, height, 0.0F, 0.0F, 1.0F, 1.0F, color, 0.0F, false, scissor);
     }
 
     @Override
@@ -59,10 +69,23 @@ public final class TextureRenderState extends UiElementRenderState {
         int packedSizeX = UiVertexPacking.packSize(this.width);
         int packedSizeY = UiVertexPacking.packSize(this.height);
 
-        addVertex(vertexConsumer, this.x, this.y, this.u0, this.v0, -halfWidth, -halfHeight, packedSizeX, packedSizeY);
-        addVertex(vertexConsumer, this.x, this.y + this.height, this.u0, this.v1, -halfWidth, halfHeight, packedSizeX, packedSizeY);
-        addVertex(vertexConsumer, this.x + this.width, this.y + this.height, this.u1, this.v1, halfWidth, halfHeight, packedSizeX, packedSizeY);
-        addVertex(vertexConsumer, this.x + this.width, this.y, this.u1, this.v0, halfWidth, -halfHeight, packedSizeX, packedSizeY);
+        float tlU, tlV, blU, blV, brU, brV, trU, trV;
+        if (this.transpose) {
+            tlU = this.v0; tlV = this.u0;
+            blU = this.v1; blV = this.u0;
+            brU = this.v1; brV = this.u1;
+            trU = this.v0; trV = this.u1;
+        } else {
+            tlU = this.u0; tlV = this.v0;
+            blU = this.u0; blV = this.v1;
+            brU = this.u1; brV = this.v1;
+            trU = this.u1; trV = this.v0;
+        }
+
+        addVertex(vertexConsumer, this.x, this.y, tlU, tlV, -halfWidth, -halfHeight, packedSizeX, packedSizeY);
+        addVertex(vertexConsumer, this.x, this.y + this.height, blU, blV, -halfWidth, halfHeight, packedSizeX, packedSizeY);
+        addVertex(vertexConsumer, this.x + this.width, this.y + this.height, brU, brV, halfWidth, halfHeight, packedSizeX, packedSizeY);
+        addVertex(vertexConsumer, this.x + this.width, this.y, trU, trV, halfWidth, -halfHeight, packedSizeX, packedSizeY);
     }
 
     private void addVertex(VertexConsumer vertexConsumer, float x, float y, float u, float v, float localX, float localY, int packedSizeX, int packedSizeY) {
@@ -94,7 +117,8 @@ public final class TextureRenderState extends UiElementRenderState {
 
         return TextureSetup.singleTexture(
                 MinecraftContext.mc.getTextureManager().getTexture(this.managedTextureId).getTextureView(),
-                RenderSystem.getSamplerCache().getClampToEdge(FilterMode.NEAREST, false)
+                RenderSystem.getSamplerCache().getClampToEdge(
+                        this.linearSampler ? FilterMode.LINEAR : FilterMode.NEAREST, false)
         );
     }
 }

@@ -112,7 +112,9 @@ public final class TargetScanRenderer {
         int secondBlue = secondColor & 255;
         float appear = Mth.clamp(animation, 0.0f, 1.0f);
         float glowStrength = Mth.clamp(glow, 0.0f, 2.0f);
-        ScanMotion motion = motion(speed);
+        float progress = motionProgress(speed);
+        float phase = motionPhase(progress);
+        boolean ascending = progress < 0.5f;
 
         collector.order(20).submitCustomGeometry(
                 poseStack,
@@ -145,8 +147,8 @@ public final class TargetScanRenderer {
                                 secondRed,
                                 secondGreen,
                                 secondBlue,
-                                motion.phase(),
-                                motion.ascending(),
+                                phase,
+                                ascending,
                                 appear,
                                 glowStrength);
                         renderSurfaceModel(model, modelPose, scan, armorSlot);
@@ -156,12 +158,14 @@ public final class TargetScanRenderer {
                 });
     }
 
-    private static ScanMotion motion(float speed) {
+    private static float motionProgress(float speed) {
         double seconds = (System.nanoTime() % 120_000_000_000L) / 1_000_000_000.0;
         double duration = 2.8 / Math.max(0.05, speed);
-        float progress = (float) ((seconds % duration) / duration);
-        float phase = 0.5f - (0.5f * Mth.cos(progress * TWO_PI));
-        return new ScanMotion(phase, progress < 0.5f);
+        return (float) ((seconds % duration) / duration);
+    }
+
+    private static float motionPhase(float progress) {
+        return 0.5f - (0.5f * Mth.cos(progress * TWO_PI));
     }
 
     private static void renderSurfaceModel(
@@ -254,9 +258,6 @@ public final class TargetScanRenderer {
         int outGreen = Math.round(Mth.clamp(luminance + ((green - luminance) * amount), 0.0f, 1.0f) * 255.0f);
         int outBlue = Math.round(Mth.clamp(luminance + ((blue - luminance) * amount), 0.0f, 1.0f) * 255.0f);
         return (color & 0xFF000000) | (outRed << 16) | (outGreen << 8) | outBlue;
-    }
-
-    private record ScanMotion(float phase, boolean ascending) {
     }
 
     private static final class BaseLayerVisibility {

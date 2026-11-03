@@ -42,7 +42,7 @@ public final class JumpCirclesFeature extends Feature implements MinecraftContex
     private final JumpGlowRenderer glowRenderer = new JumpGlowRenderer();
 
     public JumpCirclesFeature() {
-        super("JumpCircles", "Spawns expanding rings at jump positions", FeatureCategory.VISUAL, BindSetting.UNBOUND);
+        super("JumpCircles", "Кольца при приземлении с прыжка", FeatureCategory.VISUAL, BindSetting.UNBOUND);
     }
 
     public static JumpCirclesFeature getEnabled() {

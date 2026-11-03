@@ -61,7 +61,7 @@ public final class KineticLyricsFeature extends Feature {
     private int lastSeekVersion = -1;
 
     public KineticLyricsFeature() {
-        super("KineticLyrics", "Floating 3D lyrics synced to your music",
+        super("KineticLyrics", "Парящие 3D-слова песни в такт музыке",
                 FeatureCategory.VISUAL, BindSetting.UNBOUND);
     }
 
@@ -84,11 +84,13 @@ public final class KineticLyricsFeature extends Feature {
     private void resetState() {
         this.queue.clear();
         this.particles.clear();
+        this.anchorOrigin = null;
         this.trackKey = "";
         this.lastSplitMode = "";
         this.queueIndex = 0;
         this.lastAudioMs = -1L;
         this.lastSeekVersion = -1;
+        this.wasPlaying = false;
     }
 
     @EventTarget
@@ -101,7 +103,9 @@ public final class KineticLyricsFeature extends Feature {
             return;
         }
 
-        boolean playing = this.track != null && this.track.playing();
+        // Не доверяем сырому SMTC-флагу: он мигает на каждом сике/буферизации, а
+        // раньше текст на нём умирал по стене и исчезал на пару кадров.
+        boolean playing = MusicStatus.playing();
         long audioMs = Math.max(0L, MusicStatus.playbackPositionMs());
         // A seek (or track change) bumps MusicStatus.seekVersion(); resync the
         // floating words to the new position immediately instead of letting the
@@ -110,6 +114,7 @@ public final class KineticLyricsFeature extends Feature {
         if (sv != this.lastSeekVersion) {
             this.lastSeekVersion = sv;
             this.particles.clear();
+        this.anchorOrigin = null;
             // Пересчитываем индекс от текущей позиции, а не с нуля:
             // иначе после сика все пропущенные строки спавнятся разом
             // или текущая залипает.
@@ -134,7 +139,14 @@ public final class KineticLyricsFeature extends Feature {
             // current line — so we must not gate this on the raw "playing" flag,
             // which SMTC can misreport around a seek.
             advanceQueue(audioMs, mc);
+            // Возобновление: на паузе частицы умирали по стене, а очередь уже
+            // прошла текущую строку — после снятия паузы экран оставался пустым
+            // до следующей строки. Возвращаем текущую строку на экран.
+            if (!this.wasPlaying && this.particles.isEmpty()) {
+                respawnCurrent(audioMs, mc);
+            }
         }
+        this.wasPlaying = playing;
 
         // На паузе аудио-часы стоят, поэтому чистим частицы по стене:
         // иначе текст висит вечно и выглядит залипшим.
@@ -157,6 +169,7 @@ public final class KineticLyricsFeature extends Feature {
         if (this.track.title().isEmpty()) {
             if (!this.particles.isEmpty()) {
                 this.particles.clear();
+        this.anchorOrigin = null;
             }
             this.trackKey = "";
             this.queue.clear();
@@ -168,6 +181,7 @@ public final class KineticLyricsFeature extends Feature {
             this.trackKey = this.track.key();
             this.queue.clear();
             this.particles.clear();
+        this.anchorOrigin = null;
             this.queueIndex = 0;
             this.lastAudioMs = -1L;
             return false;
@@ -186,6 +200,7 @@ public final class KineticLyricsFeature extends Feature {
             pullSharedLyrics();
             this.queueIndex = 0;
             this.particles.clear();
+        this.anchorOrigin = null;
             this.lastAudioMs = -1L;
         }
         return true;
@@ -229,6 +244,24 @@ public final class KineticLyricsFeature extends Feature {
         return newIndex;
     }
 
+    private boolean wasPlaying;
+
+    /** Re-spawns the line that is currently being sung, if it is still alive. */
+    private void respawnCurrent(long audioMs, Minecraft mc) {
+        int cur = indexFor(audioMs) - 1;
+        if (cur < 0 || cur >= this.queue.size()) {
+            return;
+        }
+        KineticLyricLine line = this.queue.get(cur);
+        long nextStart = cur + 1 < this.queue.size()
+                ? this.queue.get(cur + 1).timestampMs()
+                : line.timestampMs() + 3500L;
+        long duration = Mth.clamp(nextStart - line.timestampMs(), 1200L, 5500L);
+        if (audioMs >= line.timestampMs() && audioMs - line.timestampMs() < duration) {
+            spawnAt(line.text(), duration, line.timestampMs(), mc);
+        }
+    }
+
     private void advanceQueue(long audioMs, Minecraft mc) {
         // Дрейф часов между репортами хелпера (300мс) — это не сик:
         // порог 1.5с ловил обычный тик + джиттер и сбрасывал строку.
@@ -239,6 +272,7 @@ public final class KineticLyricsFeature extends Feature {
             int newIndex = indexFor(audioMs);
             // Сик вперёд/назад: промежуточные строки не спамим.
             this.particles.clear();
+        this.anchorOrigin = null;
             int cur = newIndex - 1;
             if (cur >= 0 && cur < this.queue.size()) {
                 KineticLyricLine curLine = this.queue.get(cur);
@@ -295,13 +329,24 @@ public final class KineticLyricsFeature extends Feature {
         spawnAt(text, durationMs, MusicStatus.playbackPositionMs(), mc);
     }
 
-    /** Random point inside the view arc in front of the player, avoiding overlaps. */
+    /**
+     * Fixed world point the whole lyric field is scattered around. Anchors used to
+     * be sampled from the player's live eye position, so every new word appeared
+     * wherever the player was standing at that moment and the cloud followed them
+     * around the world. Captured once and kept until the field is cleared.
+     */
+    private Vec3 anchorOrigin;
+
+    /** Random point inside the view arc around the fixed origin, avoiding overlaps. */
     private Vec3 findAnchor(Minecraft mc) {
+        if (this.anchorOrigin == null) {
+            this.anchorOrigin = mc.player.getEyePosition();
+        }
         double minD = this.minDistance.getValue();
         double maxD = Math.max(minD + 0.5D, this.maxDistance.getValue());
         float spread = this.arcSpread.getValue().floatValue();
         float yaw = mc.gameRenderer.mainCamera().yRot();
-        Vec3 eyes = mc.player.getEyePosition();
+        Vec3 eyes = this.anchorOrigin;
 
         Vec3 best = null;
         double bestClearance = -1.0D;
@@ -476,7 +521,10 @@ public final class KineticLyricsFeature extends Feature {
             double dist = mc.gameRenderer.mainCamera().position().distanceTo(world);
             float distanceScale = (float) Mth.clamp(6.0D / Math.max(2.0D, dist), 0.45D, 1.15D);
 
-            MsdfFont font = UiFonts.getFontForText(display, UiFontStyle.MEDIUM.weight());
+            // Шрифт выбираем по ПОЛНОЙ строке, а не по обрезанному display: в Typewriter
+            // подстрока без кириллицы возвращала другой начертанный, и ширина
+            // строки скакала каждый кадр — текст «дёргался» и переезжал.
+            MsdfFont font = UiFonts.getFontForText(this.text, UiFontStyle.MEDIUM.weight());
             float textSize = BASE_TEXT_SIZE * guiScale
                     * KineticLyricsFeature.this.scale.getValue().floatValue()
                     * scaleAnim * distanceScale;

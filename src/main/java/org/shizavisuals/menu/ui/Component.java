@@ -124,7 +124,8 @@ public abstract class Component {
 
     protected final void glassPanel(float x, float y, float width, float height, float radius, float shadowBlur, float alpha) {
         Render2DUtil.rect(x, y, width, height)
-                .glass(alpha, px(0.5F), px(8.0F))
+                .color(ColorUtil.multiplyAlpha(Theme.Colors.BACKGROUND_PRIMARY_50, alpha))
+                .blur(px(8.0F), alpha)
                 .radius(radius)
                 .shadow(ColorUtil.multiplyAlpha(Theme.Colors.POPUP_SHADOW, alpha), shadowBlur)
                 .draw();

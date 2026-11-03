@@ -46,12 +46,6 @@ public abstract class LoadingOverlayMixin {
     private void onExtractRenderState(GuiGraphicsExtractor guiGraphicsExtractor, int mouseX, int mouseY, float partialTick, CallbackInfo ci) {
         ci.cancel();
 
-        if (Thread.currentThread().getPriority() != Thread.MAX_PRIORITY) {
-            try {
-                Thread.currentThread().setPriority(Thread.MAX_PRIORITY);
-            } catch (Throwable ignored) {}
-        }
-
         int width = this.minecraft.getWindow().getGuiScaledWidth();
         int height = this.minecraft.getWindow().getGuiScaledHeight();
 

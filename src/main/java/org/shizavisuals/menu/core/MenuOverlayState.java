@@ -52,12 +52,17 @@ public final class MenuOverlayState {
             return;
         }
         this.closing = true;
+        // The menu can start closing while the resize grip is held. If the preview
+        // survives, liveUiScaleValue() keeps feeding the (half-dragged) scale to the
+        // layout and the percentage pill freezes on it after the next open.
+        this.previewUiScaleValue = -1.0F;
         this.openAnimation.animate(openProgress(), 0.0F, CLOSE_ANIMATION_MS, Animation.Easing.EASE_IN_QUAD);
     }
 
     public void suspend() {
         this.open = false;
         this.closing = false;
+        this.previewUiScaleValue = -1.0F;
         this.openAnimation.animate(0.0F, 0.0F, 0L, Animation.Easing.EASE_OUT_QUAD);
     }
 
@@ -71,6 +76,7 @@ public final class MenuOverlayState {
         this.open = false;
         this.closing = false;
         this.grabbedMouseBeforeOpen = false;
+        this.previewUiScaleValue = -1.0F;
         this.page = MenuPage.NONE;
         this.lastPage = MenuPage.NONE;
         this.contentAnimation.animate(0.0F, 0.0F, 0L, Animation.Easing.EASE_OUT_QUAD);
@@ -127,6 +133,32 @@ public final class MenuOverlayState {
     public void setUiScaleValue(float uiScaleValue) {
         this.uiScaleValue = MathUtil.clamp01(uiScaleValue);
         MenuConfigStore.saveUiScaleValue(this.uiScaleValue);
+    }
+
+    /**
+     * Scale used while the resize grip is held. Kept out of the config so dragging
+     * the grip does not write to disk on every frame, and is discarded on release.
+     */
+    private float previewUiScaleValue = -1.0F;
+
+    public void previewUiScaleValue(float value) {
+        this.previewUiScaleValue = MathUtil.clamp01(value);
+    }
+
+    public void commitPreviewUiScale() {
+        if (this.previewUiScaleValue >= 0.0F) {
+            setUiScaleValue(this.previewUiScaleValue);
+            this.previewUiScaleValue = -1.0F;
+        }
+    }
+
+    public void cancelPreviewUiScale() {
+        this.previewUiScaleValue = -1.0F;
+    }
+
+    /** Live scale: the preview while resizing, otherwise the committed one. */
+    public float liveUiScaleValue() {
+        return this.previewUiScaleValue >= 0.0F ? this.previewUiScaleValue : this.uiScaleValue;
     }
 
     public float panelRadius() {

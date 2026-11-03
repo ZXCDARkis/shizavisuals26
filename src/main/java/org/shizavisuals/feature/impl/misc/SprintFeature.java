@@ -14,7 +14,7 @@ public final class SprintFeature extends Feature {
     public final BooleanSetting keepSprint = register(new BooleanSetting("Keep Sprint", true));
 
     public SprintFeature() {
-        super("Sprint", "Automatically sprints while moving", FeatureCategory.MISC, GLFW.GLFW_KEY_V);
+        super("Sprint", "Автоматически бежит при движении", FeatureCategory.MISC, GLFW.GLFW_KEY_V);
     }
 
     public static SprintFeature getEnabled() {

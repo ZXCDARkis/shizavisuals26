@@ -128,9 +128,8 @@ public final class PotionsElement extends HudElement {
         for (PotionRow row : this.rows) {
             float rowCenterY = cursorY + ROW_HEIGHT * unit / 2.0F;
 
-            Render2DUtil.rect(this.x, cursorY, this.width, ROW_HEIGHT * unit)
-                    .color(ColorUtil.multiplyAlpha(CARD_BG, alpha))
-                    .radius(6.0F * unit)
+            Render2DUtil.surface(this.x, cursorY, this.width, ROW_HEIGHT * unit,
+                    ColorUtil.multiplyAlpha(CARD_BG, alpha), 6.0F * unit, 32.0F * unit)
                     .draw();
 
             float cursorX = this.x + PADDING_X * unit;
@@ -194,6 +193,17 @@ public final class PotionsElement extends HudElement {
 
     private static String formatTicks(int ticks) {
         int seconds = ticks / 20;
-        return seconds / 60 + ":" + String.format("%02d", seconds % 60);
+        int minutes = seconds / 60;
+        int rest = seconds % 60;
+        if (minutes < 10 && rest < 10) {
+            return "0" + minutes + ":0" + rest;
+        }
+        if (minutes < 10) {
+            return "0" + minutes + ":" + rest;
+        }
+        if (rest < 10) {
+            return minutes + ":0" + rest;
+        }
+        return minutes + ":" + rest;
     }
 }

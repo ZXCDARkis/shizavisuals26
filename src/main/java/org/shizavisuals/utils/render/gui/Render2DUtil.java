@@ -38,11 +38,29 @@ public final class Render2DUtil {
         return new TextureBuilder(x, y, width, height, textureId);
     }
 
+    /**
+     * Draws a runtime-registered (TextureManager) texture such as a world
+     * icon or server favicon. Bypasses the resource-based GUI texture loader
+     * entirely, so it can never fail on "dynamic/*" identifiers.
+     */
+    public static TextureBuilder dynamicTexture(float x, float y, float width, float height, Identifier textureId) {
+        return new TextureBuilder(x, y, width, height, textureId).managed().linear();
+    }
+
     public static ColorGridBuilder colorGrid(float x, float y, float cellSize, int columns, int[] colors) {
         return new ColorGridBuilder(x, y, cellSize, columns, colors);
     }
 
-    public static void menuBackground(float x, float y, float width, float height, float radius,
+    /**
+     * Plain frosted-glass panel background: a rounded fill with an optional
+     * backdrop blur applied on top of it.
+     */
+public static RectBuilder surface(float x, float y, float width, float height,
+                                   int color, float radius, float blurRadius) {
+        return rect(x, y, width, height).radius(radius).color(color);
+    }
+
+public static void menuBackground(float x, float y, float width, float height, float radius,
                                       float seconds, int mode, int primaryColor, int secondaryColor) {
         if (width <= 0.0F || height <= 0.0F || hasEmptyScissor() || !RenderContext.isIn2D()) {
             return;
@@ -55,6 +73,28 @@ public final class Render2DUtil {
         frameState.queued.add(new MenuBackgroundRenderState(
                 extractor.pose(), x, y, x + width, y + height,
                 seconds, mode, radius, primaryColor, secondaryColor, currentScissor()
+        ));
+        frameState.pendingCount = frameState.queued.size();
+    }
+
+    /**
+     * 2D arc ring: faint base ring plus an angular sweep arc (PS5 style
+     * spinner). Angles in degrees, sweep >= 360 disables the angular window.
+     */
+    public static void ring(float cx, float cy, float radius, float thickness, float startDeg, float sweepDeg,
+                            float blendDeg, int baseColor, int arcColor) {
+        if (radius <= 0.0F || ((baseColor & 0xFF000000) == 0 && (arcColor & 0xFF000000) == 0)
+                || hasEmptyScissor() || !RenderContext.isIn2D()) {
+            return;
+        }
+        GuiGraphicsExtractor extractor = RenderContext.currentGuiGraphicsExtractor();
+        if (extractor == null) {
+            return;
+        }
+        FrameState frameState = FRAME_STATE;
+        frameState.queued.add(new RingRenderState(
+                extractor.pose(), currentScissor(), cx, cy, radius, thickness,
+                startDeg, sweepDeg, blendDeg, baseColor, arcColor
         ));
         frameState.pendingCount = frameState.queued.size();
     }
@@ -152,7 +192,6 @@ public final class Render2DUtil {
     }
 
     public static final class RectBuilder {
-
         private static final float BLUR_TINT_SCALE = 0.8F;
 
         private final float x;
@@ -217,14 +256,7 @@ public final class Render2DUtil {
             return this;
         }
 
-        public RectBuilder glass(float alpha, float borderThickness, float blurRadius) {
-            return color(org.shizavisuals.utils.ColorUtil.multiplyAlpha(
-                            org.shizavisuals.utils.render.Theme.Colors.BACKGROUND_PRIMARY_50, alpha))
-                    .border(Math.max(0.5F, borderThickness), org.shizavisuals.utils.ColorUtil.multiplyAlpha(
-                            org.shizavisuals.utils.render.Theme.Colors.OUTLINES_MEDIUM, alpha))
-                    .blur(blurRadius, alpha);
-        }
-
+        /** Frosted backdrop blur behind the rect, opacity scaled 0..1. */
         public RectBuilder blur(float radius) {
             return this.blur(radius, 1.0F);
         }
@@ -276,8 +308,14 @@ public final class Render2DUtil {
         }
 
         private boolean queueBackdropBlur(FrameState frameState, GuiGraphicsExtractor extractor) {
+            if (this.backdropBlurOpacity <= 0.01F) {
+                return false;
+            }
+
+            // The backdrop blur is an overlay: the panel keeps its normal fill and
+            // border, and the blurred background copy behind it provides the frost.
             float effectiveBlurRadius = this.backdropBlurRadius * backdropBlurScale;
-            if (effectiveBlurRadius <= 0.05F || this.backdropBlurOpacity <= 0.01F) {
+            if (effectiveBlurRadius <= 0.05F) {
                 return false;
             }
             var backdropView = GuiBackdrop.acquireView();
@@ -300,22 +338,27 @@ public final class Render2DUtil {
                     backdropView,
                     currentScissor()
             ));
-            if (this.borderThickness > 0.0F && (this.borderColor >>> 24) != 0) {
-                frameState.queued.add(new RectRenderState(
-                        extractor.pose(),
-                        this.x,
-                        this.y,
-                        this.x + this.width,
-                        this.y + this.height,
-                        0x00000000,
-                        this.topLeftRadius,
-                        this.borderThickness,
-                        this.borderColor,
-                        currentScissor()
-                ));
-            }
+            queueBorder(frameState, extractor);
             frameState.pendingCount = frameState.queued.size();
             return true;
+        }
+
+        private void queueBorder(FrameState frameState, GuiGraphicsExtractor extractor) {
+            if (this.borderThickness <= 0.0F || (this.borderColor >>> 24) == 0) {
+                return;
+            }
+            frameState.queued.add(new RectRenderState(
+                    extractor.pose(),
+                    this.x,
+                    this.y,
+                    this.x + this.width,
+                    this.y + this.height,
+                    0x00000000,
+                    this.topLeftRadius,
+                    this.borderThickness,
+                    this.borderColor,
+                    currentScissor()
+            ));
         }
 
         private void queueShadow(FrameState frameState, GuiGraphicsExtractor extractor) {
@@ -532,6 +575,8 @@ public final class Render2DUtil {
         private float u1 = 1.0F;
         private float v1 = 1.0F;
         private float radius;
+        private boolean transpose;
+        private boolean linearSampler;
 
         private TextureBuilder(float x, float y, float width, float height, Identifier textureId) {
             this.x = x;
@@ -564,6 +609,18 @@ public final class Render2DUtil {
             return this;
         }
 
+        /** Samples the texture with swapped U/V axes: a 90 degree diagonal flip. */
+        public TextureBuilder transpose() {
+            this.transpose = true;
+            return this;
+        }
+
+        /** Smooth (bilinear) sampling; required when scaling dynamic textures. */
+        public TextureBuilder linear() {
+            this.linearSampler = true;
+            return this;
+        }
+
         public void draw() {
             if (this.width <= 0.0F || this.height <= 0.0F || hasEmptyScissor()) {
                 return;
@@ -581,6 +638,7 @@ public final class Render2DUtil {
                     extractor.pose(),
                     this.textureId,
                     this.managed,
+                    this.linearSampler,
                     this.x,
                     this.y,
                     this.width,
@@ -591,6 +649,7 @@ public final class Render2DUtil {
                     this.v1,
                     this.color,
                     this.radius,
+                    this.transpose,
                     currentScissor()
             );
 

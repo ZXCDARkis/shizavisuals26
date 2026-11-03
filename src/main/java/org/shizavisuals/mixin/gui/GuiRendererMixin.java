@@ -15,6 +15,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.render.GuiRenderer;
 import net.minecraft.client.renderer.state.gui.GuiElementRenderState;
 import net.minecraft.client.renderer.state.gui.GuiItemRenderState;
+import org.shizavisuals.utils.math.FrameClock;
 import org.shizavisuals.utils.render.gui.GuiPipelines;
 import org.shizavisuals.utils.render.gui.GuiBackdrop;
 import org.spongepowered.asm.mixin.Final;
@@ -41,6 +42,10 @@ public abstract class GuiRendererMixin {
 
     @Inject(method = "prepare", at = @At("HEAD"))
     private void shizavisuals$resetGlassSplits(CallbackInfo ci) {
+        // One clock for the whole UI layer: HUD inertia, menu inertia and the
+        // jelly squash all read the same delta, so nothing can disagree about how
+        // long the frame was.
+        FrameClock.beginFrame();
         this.shizavisuals$glassSplits.clear();
         this.shizavisuals$previousElementWasGlass = false;
     }

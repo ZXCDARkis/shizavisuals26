@@ -6,6 +6,7 @@ import net.minecraft.resources.Identifier;
 import org.shizavisuals.feature.Feature;
 import org.shizavisuals.feature.FeatureCategory;
 import org.shizavisuals.feature.FeatureManager;
+import org.shizavisuals.feature.impl.visual.CosmeticsFeature;
 import org.shizavisuals.feature.setting.ModeSetting;
 import org.shizavisuals.feature.setting.MultiSelectSetting;
 import org.shizavisuals.feature.setting.Setting;
@@ -393,6 +394,11 @@ public final class ModulePage extends Component {
     private void rebuildCards() {
         this.cards.clear();
         for (Feature feature : FeatureManager.INSTANCE.getFeatures(this.selectedCategory)) {
+            // Cosmetics live in their own tab now, so the module card would be
+            // a second, worse place to pick them.
+            if (feature instanceof CosmeticsFeature) {
+                continue;
+            }
             this.cards.add(new ModuleCard(feature));
         }
         this.cardsCategory = this.selectedCategory;

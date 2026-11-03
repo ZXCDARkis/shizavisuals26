@@ -6,6 +6,6 @@ import org.shizavisuals.feature.setting.BindSetting;
 
 public final class ItemPhysicsFeature extends Feature {
     public ItemPhysicsFeature() {
-        super("ItemPhysics", "Dropped items lie on the ground", FeatureCategory.VISUAL, BindSetting.UNBOUND);
+        super("ItemPhysics", "Выброшенные предметы лежат на земле", FeatureCategory.VISUAL, BindSetting.UNBOUND);
     }
 }

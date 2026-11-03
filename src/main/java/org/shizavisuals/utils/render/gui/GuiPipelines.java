@@ -26,6 +26,8 @@ public final class GuiPipelines {
 
     public static final RenderPipeline MENU_BACKGROUND = builder("menu_background", "menu_background", false).build();
 
+    public static final RenderPipeline RING = builder("ring", "ring", false).build();
+
     private static final BindGroupLayout GUI_BLUR_LAYOUT = BindGroupLayout.builder()
             .withSampler("CurrentInput")
             .withUniform("GuiKawaseUniforms", UniformType.UNIFORM_BUFFER)

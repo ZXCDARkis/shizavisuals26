@@ -9,6 +9,6 @@ public final class NameProtectFeature extends Feature {
     public final TextSetting name = register(new TextSetting("Name", "ShizaVisualsUser", 32));
 
     public NameProtectFeature() {
-        super("NameProtect", "Protects your nickname in client UI", FeatureCategory.MISC, BindSetting.UNBOUND);
+        super("NameProtect", "Защищает ваш ник в интерфейсе клиента", FeatureCategory.MISC, BindSetting.UNBOUND);
     }
 }

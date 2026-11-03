@@ -48,6 +48,14 @@ final class UiVertexPacking {
         return MathUtil.clamp(hi, 0, 4095) * 4096.0F + MathUtil.clamp(lo, 0, 4095);
     }
 
+    static int packDualHi(float px) {
+        return MathUtil.clamp(Math.round(px * RADIUS_SCALE), 0, 4095);
+    }
+
+    static int packDualLo(float px) {
+        return MathUtil.clamp(Math.round(px * RADIUS_SCALE), 0, 4095);
+    }
+
     static float snormChannel(int channel) {
         return channel / 127.5F - 1.0F;
     }

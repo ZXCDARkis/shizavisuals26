@@ -160,9 +160,8 @@ public final class KeybindsElement extends HudElement {
             float drawX = this.x + slideOffsetX;
             float rowCenterY = cursorY + ROW_HEIGHT * unit / 2.0F;
 
-            Render2DUtil.rect(drawX, cursorY, this.width, ROW_HEIGHT * unit)
-                    .color(ColorUtil.multiplyAlpha(CARD_BG, finalAlpha))
-                    .radius(6.0F * unit)
+            Render2DUtil.surface(drawX, cursorY, this.width, ROW_HEIGHT * unit,
+                        ColorUtil.multiplyAlpha(CARD_BG, finalAlpha), 6.0F * unit, 32.0F * unit)
                     .draw();
 
             float cursorX = drawX + PADDING_X * unit;

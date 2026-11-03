@@ -1,5 +1,6 @@
 package org.shizavisuals.feature;
 
+import org.shizavisuals.ShizaVisuals;
 import org.shizavisuals.event.EventTarget;
 import org.shizavisuals.event.events.input.KeyboardInputEvent;
 import org.shizavisuals.event.events.input.MouseInputEvent;
@@ -18,12 +19,14 @@ import org.shizavisuals.feature.impl.misc.SprintFeature;
 import org.shizavisuals.feature.impl.misc.WebPanelFeature;
 import org.shizavisuals.feature.impl.visual.TargetEsp;
 import org.shizavisuals.feature.impl.visual.BlockOutlineFeature;
+import org.shizavisuals.feature.impl.visual.CosmeticsFeature;
 import org.shizavisuals.feature.impl.visual.CrosshairFeature;
 import org.shizavisuals.feature.impl.visual.FullBrightFeature;
 import org.shizavisuals.feature.impl.visual.HitParticlesFeature;
 import org.shizavisuals.feature.impl.visual.HoldMyItemsFeature;
 import org.shizavisuals.feature.impl.visual.HudFeature;
 import org.shizavisuals.feature.impl.visual.ItemPhysicsFeature;
+import org.shizavisuals.feature.impl.visual.ItemReplacerFeature;
 import org.shizavisuals.feature.impl.visual.JumpCirclesFeature;
 import org.shizavisuals.feature.impl.visual.KillEffectFeature;
 import org.shizavisuals.feature.impl.visual.KineticLyricsFeature;
@@ -31,9 +34,13 @@ import org.shizavisuals.feature.impl.visual.LowHpFeature;
 import org.shizavisuals.feature.impl.visual.MotionBlurFeature;
 import org.shizavisuals.feature.impl.visual.WaveEffectFeature;
 import org.shizavisuals.feature.impl.visual.PopChamsFeature;
+import org.shizavisuals.feature.impl.visual.PuddlesFeature;
 import org.shizavisuals.feature.impl.visual.RemovalsFeature;
 import org.shizavisuals.feature.impl.visual.ShaderHandsFeature;
 import org.shizavisuals.feature.impl.visual.SwingAnimationFeature;
+import org.shizavisuals.feature.impl.visual.TntEffectFeature;
+import org.shizavisuals.feature.impl.visual.SpiritsFeature;
+import org.shizavisuals.feature.impl.visual.PetsFeature;
 import org.shizavisuals.feature.impl.visual.TrajectoriesFeature;
 import org.shizavisuals.feature.impl.visual.ViewModelFeature;
 import org.shizavisuals.feature.impl.visual.WorldTweaksFeature;
@@ -111,13 +118,22 @@ public final class FeatureManager {
                 new DeathCoordsFeature(),
                 new AutoTpaAcceptFeature(),
                 new ChestStealerFeature(),
-                new TargetEsp()
+                new TargetEsp(),
+                new CosmeticsFeature(),
+                new PuddlesFeature(),
+                new TntEffectFeature(),
+                new SpiritsFeature(),
+                new PetsFeature(),
+                new ItemReplacerFeature()
         ).forEach(this::register);
 
         configStore.load(this);
         initialized = true;
 
-        Runtime.getRuntime().addShutdownHook(new Thread(this::flushPendingSave, "ShizaVisuals Config Flush"));
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            ShizaVisuals.markStopping();
+            flushPendingSave();
+        }, "ShizaVisuals Config Flush"));
     }
 
     public void save() {
@@ -222,27 +238,23 @@ public final class FeatureManager {
 
     @EventTarget
     public void onShutdown(ShutdownEvent event) {
-        synchronized (saveLock) {
-            if (pendingSave != null) {
-                pendingSave.cancel(false);
-                pendingSave = null;
+        try {
+            synchronized (saveLock) {
+                if (pendingSave != null) {
+                    pendingSave.cancel(false);
+                    pendingSave = null;
+                }
             }
-        }
-        configStore.save(configStore.snapshot(this));
-        configWriter.shutdown();
-        initialized = false;
+            configStore.save(configStore.snapshot(this));
+        } finally {
+            this.activeHoldBinds.clear();
+            this.configWriter.shutdown();
+            this.initialized = false;
 
-        // AWT/CEF/music: daemon guard threads may keep JVM alive and leave icon in tray.
-        try { org.shizavisuals.webpanel.WebPanelAwtGuard.shutdown(); } catch (Throwable ignored) {}
-        try { org.shizavisuals.webpanel.WebPanelStream.shutdown(); } catch (Throwable ignored) {}
-        try { org.shizavisuals.hud.island.MusicStatus.shutdown(); } catch (Throwable ignored) {}
-        Thread exitWatchdog = new Thread(() -> {
-            try { Thread.sleep(1200L); } catch (InterruptedException ignored) {}
-            // if we are still here, AWT EventQueue kept JVM alive -> force exit like vanilla launcher
-            try { Runtime.getRuntime().halt(0); } catch (Throwable ignored) {}
-        }, "ShizaVisuals-ExitWatchdog");
-        exitWatchdog.setDaemon(true);
-        exitWatchdog.start();
+            try { org.shizavisuals.webpanel.WebPanelAwtGuard.shutdown(); } catch (Throwable ignored) {}
+            try { org.shizavisuals.webpanel.WebPanelStream.shutdown(); } catch (Throwable ignored) {}
+            try { org.shizavisuals.hud.island.MusicStatus.shutdown(); } catch (Throwable ignored) {}
+        }
     }
 
     private String normalize(String value) {

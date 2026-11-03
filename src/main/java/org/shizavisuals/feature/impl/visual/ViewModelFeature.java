@@ -21,7 +21,7 @@ public final class ViewModelFeature extends Feature {
     ));
 
     public ViewModelFeature() {
-        super("ViewModel", "Adjusts first person hand positions", FeatureCategory.VISUAL, BindSetting.UNBOUND);
+        super("ViewModel", "Настраивает позиции рук от первого лица", FeatureCategory.VISUAL, BindSetting.UNBOUND);
     }
 
     public float offsetX(HumanoidArm arm) {

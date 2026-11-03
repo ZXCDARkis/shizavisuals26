@@ -11,7 +11,7 @@ public abstract class IslandStatus {
     protected final String name;
     protected IslandSize size = new IslandSize(48.0F, 15.0F);
     protected final IslandAnimation animation = new IslandAnimation(500L, IslandEasing.BAKEK_SIZE);
-    private boolean enabled = true;
+    private volatile boolean enabled = true;
     private boolean toggleable = true;
 
     public IslandStatus(DynamicIsland island, String name) {

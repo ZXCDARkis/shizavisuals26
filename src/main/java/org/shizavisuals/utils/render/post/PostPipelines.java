@@ -10,6 +10,7 @@ import com.mojang.blaze3d.pipeline.RenderPipeline;
 import com.mojang.blaze3d.platform.CompareOp;
 import com.mojang.blaze3d.shaders.UniformType;
 import com.mojang.blaze3d.vertex.DefaultVertexFormat;
+import net.minecraft.client.renderer.BindGroupLayouts;
 import net.minecraft.client.renderer.RenderPipelines;
 import net.minecraft.resources.Identifier;
 
@@ -112,6 +113,12 @@ public final class PostPipelines {
             .withUniform("MotionBlurUniforms", UniformType.UNIFORM_BUFFER)
             .build();
 
+    private static final BindGroupLayout PUDDLES_LAYOUT = BindGroupLayout.builder()
+            .withSampler("SceneSampler")
+            .withSampler("DepthSampler")
+            .withUniform("WorldPuddlesUniforms", UniformType.UNIFORM_BUFFER)
+            .build();
+
     private static final BindGroupLayout CHAMS_MASK_STYLE_LAYOUT = BindGroupLayout.builder()
             .withSampler("MaskSampler")
             .withUniform("ChamsStyle", UniformType.UNIFORM_BUFFER)
@@ -132,6 +139,11 @@ public final class PostPipelines {
     private static final BindGroupLayout POPCHAMS_COMPOSITE_LAYOUT = BindGroupLayout.builder()
             .withSampler("BlurredSampler")
             .withUniform("PopChamsComposite", UniformType.UNIFORM_BUFFER)
+            .build();
+
+    private static final BindGroupLayout TNT_SHOCKWAVE_LAYOUT = BindGroupLayout.builder()
+            .withSampler("SceneSampler")
+            .withUniform("TntShockwaveUniforms", UniformType.UNIFORM_BUFFER)
             .build();
 
     public static final RenderPipeline ESP_KAWASE_DOWN = RenderPipeline.builder()
@@ -363,6 +375,42 @@ public final class PostPipelines {
             "shizavisuals:post/motion_blur",
             MOTION_BLUR_LAYOUT
     );
+
+    public static final RenderPipeline WORLD_PUDDLES = worldPostPipeline(
+            "puddles",
+            "shizavisuals:post/world_puddles",
+            PUDDLES_LAYOUT
+    );
+
+    // One pass per live blast, each with its own ring origin. No blending: the
+    // pass already re-samples the scene copy and writes the distorted result,
+    // so SRC_ALPHA would double-apply the ring highlight.
+    public static final RenderPipeline TNT_SHOCKWAVE = worldPostPipeline(
+            "tnt_shockwave",
+            "shizavisuals:post/tnt_shockwave",
+            TNT_SHOCKWAVE_LAYOUT
+    );
+
+    // Reuses the plain POSITION_COLOR passthrough (shizavisuals_line) for
+    // world-space effect geometry that carries its own colour per vertex.
+    public static final RenderPipeline WORLD_COLOR_TRANSLUCENT = worldColorPipeline(
+            "color_translucent", BlendFunction.TRANSLUCENT);
+    public static final RenderPipeline WORLD_COLOR_ADDITIVE = worldColorPipeline(
+            "color_additive", BlendFunction.LIGHTNING);
+
+    private static RenderPipeline worldColorPipeline(String name, BlendFunction blend) {
+        return RenderPipeline.builder()
+                .withLocation(Identifier.parse("shizavisuals:pipeline/world/" + name))
+                .withVertexShader(Identifier.parse("shizavisuals:core/shizavisuals_line"))
+                .withFragmentShader(Identifier.parse("shizavisuals:core/shizavisuals_line"))
+                .withBindGroupLayout(BindGroupLayouts.PROJECTION)
+                .withColorTargetState(new ColorTargetState(blend))
+                .withDepthStencilState(new DepthStencilState(CompareOp.GREATER_THAN_OR_EQUAL, false))
+                .withVertexBinding(0, DefaultVertexFormat.POSITION_COLOR)
+                .withPrimitiveTopology(PrimitiveTopology.TRIANGLES)
+                .withCull(false)
+                .build();
+    }
 
     public static final RenderPipeline CHAMS_SOLID = chamsPipeline(
             "solid", "shizavisuals:post/chams_solid", CHAMS_MASK_STYLE_LAYOUT, BlendFunction.TRANSLUCENT);

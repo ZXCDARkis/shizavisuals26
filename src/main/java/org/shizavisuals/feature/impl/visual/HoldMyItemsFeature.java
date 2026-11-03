@@ -10,13 +10,16 @@ import org.shizavisuals.feature.FeatureCategory;
 import org.shizavisuals.feature.FeatureManager;
 import org.shizavisuals.feature.setting.BindSetting;
 import org.shizavisuals.menu.core.MenuOverlay;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public final class HoldMyItemsFeature extends Feature {
+    private static final Logger LOGGER = LoggerFactory.getLogger(HoldMyItemsFeature.class);
     private static final String RESOURCE_PACK_ID = "holdmyitems:pack_test";
     private static final ReloadCompletionListener RELOAD_COMPLETION = new ReloadCompletionListener();
 
     public HoldMyItemsFeature() {
-        super("HoldMyItems", "Animated hands and held items in first person", FeatureCategory.VISUAL, BindSetting.UNBOUND);
+        super("HoldMyItems", "Анимированные руки и предметы от первого лица", FeatureCategory.VISUAL, BindSetting.UNBOUND);
     }
 
     public static boolean isActive() {
@@ -51,14 +54,14 @@ public final class HoldMyItemsFeature extends Feature {
                 repository = client.getResourcePackRepository();
                 repository.reload();
             } catch (RuntimeException reloadError) {
-                reloadError.printStackTrace();
+                LOGGER.warn("HoldMyItems pack reload failed", reloadError);
                 return;
             }
             boolean selected;
             try {
                 selected = repository.getSelectedIds().contains(RESOURCE_PACK_ID);
             } catch (RuntimeException lookupError) {
-                lookupError.printStackTrace();
+                LOGGER.warn("HoldMyItems pack lookup failed", lookupError);
                 return;
             }
             boolean changed;
@@ -67,7 +70,7 @@ public final class HoldMyItemsFeature extends Feature {
                         ? !selected && repository.addPack(RESOURCE_PACK_ID)
                         : selected && repository.removePack(RESOURCE_PACK_ID);
             } catch (RuntimeException packError) {
-                packError.printStackTrace();
+                LOGGER.warn("HoldMyItems pack add/remove failed", packError);
                 return;
             }
             if (changed) {

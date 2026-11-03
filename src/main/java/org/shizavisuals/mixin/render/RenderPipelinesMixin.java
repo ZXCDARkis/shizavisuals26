@@ -2,9 +2,18 @@ package org.shizavisuals.mixin.render;
 
 import com.mojang.blaze3d.pipeline.RenderPipeline;
 import net.minecraft.client.renderer.RenderPipelines;
+import org.shizavisuals.utils.render.esp.EspSpriteRenderer;
+import org.shizavisuals.utils.render.esp.TargetScanRenderTypes;
 import org.shizavisuals.utils.render.gui.GuiPipelines;
+import org.shizavisuals.utils.render.jump.JumpCircleRenderer;
+import org.shizavisuals.utils.render.jump.JumpGlowRenderer;
+import org.shizavisuals.utils.render.jump.JumpWaveRenderer;
+import org.shizavisuals.utils.render.kill.KillEffectRenderer;
 import org.shizavisuals.utils.render.particles.ProceduralParticleRenderer;
+import org.shizavisuals.utils.render.particles.WorldParticleRenderer;
 import org.shizavisuals.utils.render.post.PostPipelines;
+import org.shizavisuals.utils.render.world.WorldMeshRenderer;
+import org.shizavisuals.webpanel.WebPanelPipelines;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
@@ -27,6 +36,7 @@ public abstract class RenderPipelinesMixin {
         register(GuiPipelines.BLUR_RECT);
         register(GuiPipelines.COLOR_GRID);
         register(GuiPipelines.MENU_BACKGROUND);
+        register(GuiPipelines.RING);
         register(GuiPipelines.GUI_BLUR_DOWN);
         register(GuiPipelines.GUI_BLUR_UP);
         for (RenderPipeline pipeline : GuiPipelines.itemDownscaleVariants()) {
@@ -71,5 +81,35 @@ public abstract class RenderPipelinesMixin {
         register(PostPipelines.POPCHAMS_MASK);
         register(PostPipelines.POPCHAMS_MASK_SOLID);
         register(PostPipelines.POPCHAMS_COMPOSITE);
+        register(PostPipelines.HAND_MASK);
+        register(PostPipelines.HAND_MASK_SMOOTH);
+        register(PostPipelines.SHADER_HANDS);
+        register(PostPipelines.HAND_FILL);
+        register(PostPipelines.HAND_GLASS);
+        register(PostPipelines.HAND_OUTLINE);
+        register(PostPipelines.HAND_HALO);
+        register(PostPipelines.HAND_BLUR_DOWN);
+        register(PostPipelines.HAND_BLUR_UP);
+        register(PostPipelines.HAND_TRAIL);
+        register(PostPipelines.MOTION_BLUR);
+        register(PostPipelines.TNT_SHOCKWAVE);
+        register(PostPipelines.WORLD_COLOR_TRANSLUCENT);
+        register(PostPipelines.WORLD_COLOR_ADDITIVE);
+        register(PostPipelines.WORLD_PUDDLES);
+        registerAll(WebPanelPipelines.pipelines());
+        registerAll(EspSpriteRenderer.pipelines());
+        registerAll(WorldParticleRenderer.pipelines());
+        registerAll(KillEffectRenderer.pipelines());
+        registerAll(WorldMeshRenderer.pipelines());
+        register(TargetScanRenderTypes.pipeline());
+        register(JumpWaveRenderer.pipeline());
+        register(JumpGlowRenderer.pipeline());
+        register(JumpCircleRenderer.pipeline());
+    }
+
+    private static void registerAll(Iterable<RenderPipeline> pipelines) {
+        for (RenderPipeline pipeline : pipelines) {
+            register(pipeline);
+        }
     }
 }

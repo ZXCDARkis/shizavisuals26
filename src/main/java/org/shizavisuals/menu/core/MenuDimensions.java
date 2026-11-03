@@ -18,7 +18,10 @@ public record MenuDimensions(float panelWidth, float panelHeight, float panelRad
 
     public static MenuDimensions resolve(Minecraft minecraft, MenuOverlayState state) {
         double guiScale = minecraft.getWindow().getGuiScale();
-        float menuScale = MathUtil.lerp(MenuOverlayState.MIN_UI_SCALE, MenuOverlayState.MAX_UI_SCALE, state.uiScaleValue());
+        // liveUiScaleValue, not uiScaleValue: during a resize the grip only previews
+        // the new scale, and the panel has to resize with the preview or the grip
+        // would drift away from the corner the user is holding.
+        float menuScale = MathUtil.lerp(MenuOverlayState.MIN_UI_SCALE, MenuOverlayState.MAX_UI_SCALE, state.liveUiScaleValue());
         float naturalWidth = Math.max(1.0F, ScaleUtil.toGuiPixels(DESIGN_WIDTH * menuScale, guiScale));
         float naturalHeight = Math.max(1.0F, ScaleUtil.toGuiPixels(DESIGN_HEIGHT * menuScale, guiScale));
         float availableWidth = Math.max(1.0F, minecraft.getWindow().getGuiScaledWidth() - SCREEN_MARGIN * 2.0F);

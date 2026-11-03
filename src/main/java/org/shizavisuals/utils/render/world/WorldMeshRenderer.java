@@ -37,6 +37,10 @@ public final class WorldMeshRenderer {
 
     private static GpuBuffer vertexBuffer;
 
+    public static List<RenderPipeline> pipelines() {
+        return List.of(THROUGH_WALLS, DEPTH_TESTED);
+    }
+
     private WorldMeshRenderer() {
     }
 

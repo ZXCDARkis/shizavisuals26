@@ -1,6 +1,15 @@
 package org.shizavisuals.hud.island;
 
+import java.util.concurrent.TimeUnit;
+
 public class IslandAnimation {
+    /**
+     * Targets closer than this count as "the same". Callers pass computed floats,
+     * so an exact compare restarted the easing on every jittery frame, which made
+     * the island values twitch instead of settling.
+     */
+    private static final float EPSILON = 1.0E-4F;
+
     private long duration;
     private float value;
     private IslandEasing easing;
@@ -14,6 +23,8 @@ public class IslandAnimation {
         this.value = initialValue;
         this.startValue = initialValue;
         this.targetValue = initialValue;
+        // -1 so the first update() sees elapsed >= duration and snaps to target.
+        this.startTime = System.nanoTime() - TimeUnit.MILLISECONDS.toNanos(duration);
     }
 
     public IslandAnimation(long duration, IslandEasing easing) {
@@ -25,17 +36,19 @@ public class IslandAnimation {
     }
 
     public float update(float newValue) {
-        if (newValue != this.targetValue) {
+        if (Math.abs(newValue - this.targetValue) > EPSILON) {
             this.startValue = this.value;
             this.targetValue = newValue;
-            this.startTime = System.currentTimeMillis();
+            // nanoTime, not currentTimeMillis: monotonic and finer grained, so a
+            // wall-clock adjustment cannot stall or jump an in-flight animation.
+            this.startTime = System.nanoTime();
         }
-        long elapsed = System.currentTimeMillis() - this.startTime;
+        long elapsed = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - this.startTime);
         if (elapsed >= this.duration) {
             this.value = this.targetValue;
             return this.value;
         }
-        float progress = (float) elapsed / (float) this.duration;
+        float progress = this.duration <= 0L ? 1.0F : (float) elapsed / (float) this.duration;
         float easedProgress = this.easing.ease(progress);
         this.value = this.startValue + (this.targetValue - this.startValue) * easedProgress;
         return this.value;

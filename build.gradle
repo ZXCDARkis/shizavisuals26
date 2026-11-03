@@ -56,6 +56,9 @@ dependencies {
 
     implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
     implementation "com.github.weisj:jsvg:2.1.0"
+    include "com.github.weisj:jsvg:2.1.0"
+    implementation "org.sejda.imageio:webp-imageio:0.1.6"
+    include "org.sejda.imageio:webp-imageio:0.1.6"
     implementation "com.google.code.gson:gson:2.10.1"
 
     implementation "net.java.dev.jna:jna:5.14.0"
@@ -102,13 +105,29 @@ processResources {
 
     // The source fabric.mod.json stays valid JSON ("jars": []); the real
     // bundled jar list is injected into the processed output here.
+    // Loom also appends its own "include" entries (jsvg, jna, ...) to the same
+    // array, so the lists are merged instead of replaced - overwriting it drops
+    // nested libraries and the game dies with NoClassDefFoundError at runtime.
     def resolvedBundledModsJson = bundledModsJson
     doLast { task ->
         def modJsonFile = new File(task.destinationDir, "fabric.mod.json")
         if (modJsonFile.exists()) {
             def slurper = new groovy.json.JsonSlurper()
             def modJson = slurper.parse(modJsonFile, "UTF-8")
-            modJson.jars = slurper.parseText(resolvedBundledModsJson)
+            def entries = new LinkedHashMap<String, Object>()
+            (modJson.jars ?: []).each { entry ->
+                if (entry instanceof Map && entry.file) {
+                    entries.put(entry.file.toString(), entry)
+                }
+            }
+            slurper.parseText(resolvedBundledModsJson).each { entry ->
+                if (entry instanceof Map && entry.file) {
+                    entries.put(entry.file.toString(), entry)
+                }
+            }
+            def resolved = new ArrayList<Object>()
+            entries.keySet().sort().each { key -> resolved.add(entries.get(key)) }
+            modJson.jars = resolved
             modJsonFile.setText(groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson(modJson)), "UTF-8")
         }
     }

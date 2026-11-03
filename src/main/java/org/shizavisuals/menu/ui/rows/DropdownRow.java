@@ -23,6 +23,10 @@ import java.util.List;
 import java.util.Map;
 
 public final class DropdownRow extends SettingRow {
+    private static final int SCROLLBAR_WIDTH = 3;
+    private static final int SCROLLBAR_GAP = 2;
+    private static final float WHEEL_STEP = 18.0F;
+
     private final DropdownComponent dropdown;
     private final Map<String, MarqueeText> optionTexts = new HashMap<>();
     private final Animation popupAnimation = new Animation(150L, Animation.Easing.EASE_OUT_QUAD);
@@ -30,6 +34,7 @@ public final class DropdownRow extends SettingRow {
     private String flashedOption;
     private boolean open;
     private boolean closing;
+    private float scrollOffset;
 
     public DropdownRow(ModeSetting setting) {
         super(setting);
@@ -67,12 +72,25 @@ public final class DropdownRow extends SettingRow {
     public void closeTransientImmediately() {
         this.open = false;
         this.closing = false;
+        this.scrollOffset = 0.0F;
         this.popupAnimation.animate(0.0F, 0.0F, 0L, Animation.Easing.EASE_OUT_QUAD);
     }
 
     @Override
     public boolean hasOpenPopup() {
         return this.open;
+    }
+
+    @Override
+    public boolean scroll(int mouseX, int mouseY, double vertical) {
+        if (!this.open) {
+            return false;
+        }
+        if (!hit(mouseX, mouseY, popupX(), popupY(), popupWidth(), visibleHeight())) {
+            return false;
+        }
+        this.scrollOffset = clampScroll(this.scrollOffset - (float) vertical * WHEEL_STEP);
+        return true;
     }
 
     @Override
@@ -84,7 +102,7 @@ public final class DropdownRow extends SettingRow {
             close();
             return true;
         }
-        if (hit(mouseX, mouseY, popupX(), popupY(), Theme.Sizes.DROPDOWN_POPUP_WIDTH, popupHeight())) {
+        if (hit(mouseX, mouseY, popupX(), popupY(), popupWidth(), visibleHeight())) {
             return true;
         }
         close();
@@ -96,7 +114,7 @@ public final class DropdownRow extends SettingRow {
         if (!this.open && !this.closing) {
             return;
         }
-        renderPopup();
+        renderPopup(guiGraphicsExtractor);
         if (!this.open && this.popupAnimation.isFinished()) {
             this.closing = false;
         }
@@ -134,6 +152,7 @@ public final class DropdownRow extends SettingRow {
         }
         this.open = true;
         this.closing = false;
+        this.scrollOffset = clampScroll(0.0F);
         this.popupAnimation.animate(0.0F, 1.0F, 150L, Animation.Easing.EASE_OUT_QUAD);
     }
 
@@ -158,12 +177,18 @@ public final class DropdownRow extends SettingRow {
 
     private boolean optionClick(int mouseX, int mouseY) {
         List<String> options = options();
-        int itemX = popupX() + Theme.Sizes.DROPDOWN_POPUP_PADDING;
-        int itemY = popupY() + Theme.Sizes.DROPDOWN_POPUP_PADDING;
-        int itemWidth = Theme.Sizes.DROPDOWN_POPUP_WIDTH - Theme.Sizes.DROPDOWN_POPUP_PADDING * 2;
+        if (options.isEmpty()) {
+            return false;
+        }
+        int itemX = itemX();
+        float itemY = firstItemY();
+        int itemWidth = itemWidth();
         int step = Theme.Sizes.DROPDOWN_POPUP_ITEM_HEIGHT + Theme.Sizes.DROPDOWN_POPUP_GAP;
-        for (int index = 0; index < options.size(); index++) {
-            if (!hit(mouseX, mouseY, itemX, itemY + index * step, itemWidth, Theme.Sizes.DROPDOWN_POPUP_ITEM_HEIGHT)) {
+        int first = firstVisibleIndex();
+        int last = lastVisibleIndex();
+        for (int index = first; index <= last && index < options.size(); index++) {
+            if (!hit(mouseX, mouseY, itemX, itemY + (index - first) * step, itemWidth,
+                    Theme.Sizes.DROPDOWN_POPUP_ITEM_HEIGHT)) {
                 continue;
             }
             String option = options.get(index);
@@ -187,13 +212,18 @@ public final class DropdownRow extends SettingRow {
 
     private int popupY() {
         if (opensUp()) {
-            return controlY() - Theme.Sizes.DROPDOWN_POPUP_OFFSET_Y - popupHeight();
+            return controlY() - Theme.Sizes.DROPDOWN_POPUP_OFFSET_Y - visibleHeight();
         }
         return controlY() + Theme.Sizes.DROPDOWN_VALUE_HEIGHT + Theme.Sizes.DROPDOWN_POPUP_OFFSET_Y;
     }
 
+    /** Popup width shrinks by the scrollbar only when the list actually overflows. */
+    private int popupWidth() {
+        return Theme.Sizes.DROPDOWN_POPUP_WIDTH;
+    }
+
     private boolean opensUp() {
-        int popupHeight = popupHeight();
+        int popupHeight = visibleHeight();
         int belowY = controlY() + Theme.Sizes.DROPDOWN_VALUE_HEIGHT + Theme.Sizes.DROPDOWN_POPUP_OFFSET_Y;
         if (belowY + popupHeight <= this.host.popupViewportMaxY()) {
             return false;
@@ -209,14 +239,74 @@ public final class DropdownRow extends SettingRow {
         return spaceAbove > spaceBelow;
     }
 
-    private int popupHeight() {
+    private int contentHeight() {
         int count = options().size();
         return Theme.Sizes.DROPDOWN_POPUP_PADDING * 2
                 + count * Theme.Sizes.DROPDOWN_POPUP_ITEM_HEIGHT
                 + Math.max(0, count - 1) * Theme.Sizes.DROPDOWN_POPUP_GAP;
     }
 
-    private void renderPopup() {
+    /**
+     * Popup height is capped by the space between the header and the bottom of the
+     * card viewport, so a 119-entry dropdown (ItemReplacer) can never grow past the
+     * screen and swallow clicks meant for the rest of the menu.
+     */
+    private int maxVisibleHeight() {
+        int anchor = controlY() + Theme.Sizes.DROPDOWN_VALUE_HEIGHT + Theme.Sizes.DROPDOWN_POPUP_OFFSET_Y;
+        int below = this.host.popupViewportMaxY() - anchor;
+        int above = controlY() - Theme.Sizes.DROPDOWN_POPUP_OFFSET_Y - Theme.Sizes.HEADER_HEIGHT;
+        int room = Math.max(below, above);
+        return Math.max(
+                Theme.Sizes.DROPDOWN_POPUP_PADDING * 2 + Theme.Sizes.DROPDOWN_POPUP_ITEM_HEIGHT,
+                room
+        );
+    }
+
+    private int visibleHeight() {
+        return Math.min(contentHeight(), maxVisibleHeight());
+    }
+
+    private boolean scrollable() {
+        return contentHeight() > visibleHeight();
+    }
+
+    private int itemWidth() {
+        return popupWidth() - Theme.Sizes.DROPDOWN_POPUP_PADDING * 2
+                - (scrollable() ? SCROLLBAR_WIDTH + SCROLLBAR_GAP : 0);
+    }
+
+    private int itemX() {
+        return popupX() + Theme.Sizes.DROPDOWN_POPUP_PADDING;
+    }
+
+    private float firstItemY() {
+        return popupY() + Theme.Sizes.DROPDOWN_POPUP_PADDING - this.scrollOffset;
+    }
+
+    private float maxScroll() {
+        return Math.max(0.0F, contentHeight() - visibleHeight());
+    }
+
+    private float clampScroll(float value) {
+        return Math.max(0.0F, Math.min(value, maxScroll()));
+    }
+
+    private int step() {
+        return Theme.Sizes.DROPDOWN_POPUP_ITEM_HEIGHT + Theme.Sizes.DROPDOWN_POPUP_GAP;
+    }
+
+    private int firstVisibleIndex() {
+        int step = step();
+        return Math.max(0, (int) Math.floor((this.scrollOffset - Theme.Sizes.DROPDOWN_POPUP_PADDING) / step));
+    }
+
+    private int lastVisibleIndex() {
+        int step = step();
+        float bottom = this.scrollOffset + visibleHeight();
+        return (int) Math.ceil((bottom - Theme.Sizes.DROPDOWN_POPUP_PADDING) / step);
+    }
+
+    private void renderPopup(GuiGraphicsExtractor guiGraphicsExtractor) {
         List<String> options = options();
         float progress = this.popupAnimation.getValue();
         if (progress <= 0.001F || options.isEmpty()) {
@@ -226,17 +316,28 @@ public final class DropdownRow extends SettingRow {
         float slide = (opensUp() ? 6.0F : -6.0F) * (1.0F - progress);
         int popupX = popupX();
         float popupY = popupY() + slide;
-        int popupHeight = popupHeight();
-        int itemX = popupX + Theme.Sizes.DROPDOWN_POPUP_PADDING;
-        float itemY = popupY + Theme.Sizes.DROPDOWN_POPUP_PADDING;
-        int itemWidth = Theme.Sizes.DROPDOWN_POPUP_WIDTH - Theme.Sizes.DROPDOWN_POPUP_PADDING * 2;
-        int step = Theme.Sizes.DROPDOWN_POPUP_ITEM_HEIGHT + Theme.Sizes.DROPDOWN_POPUP_GAP;
+        int popupWidth = popupWidth();
+        int popupHeight = visibleHeight();
+        float itemY = firstItemY();
+        int itemWidth = itemWidth();
+        int itemX = itemX();
+        int step = step();
 
-        glassPanel(sx(popupX), sy(popupY), px(Theme.Sizes.DROPDOWN_POPUP_WIDTH), px(popupHeight),
+        glassPanel(sx(popupX), sy(popupY), px(popupWidth), px(popupHeight),
                 px(Theme.Sizes.DROPDOWN_POPUP_RADIUS), px(20.0F), this.rowAlpha * progress);
 
-        for (int index = 0; index < options.size(); index++) {
-            float optionY = itemY + index * step;
+        this.scrollOffset = clampScroll(this.scrollOffset);
+        int first = firstVisibleIndex();
+        int last = lastVisibleIndex();
+        if (last >= options.size()) {
+            last = options.size() - 1;
+        }
+
+        guiGraphicsExtractor.enableScissor(Math.round(sx(popupX)), Math.round(sy(popupY)),
+                Math.round(sx(popupX + popupWidth)), Math.round(sy(popupY + popupHeight)));
+        Render2DUtil.pushScissor(sx(popupX), sy(popupY), px(popupWidth), px(popupHeight));
+        for (int index = first; index <= last && index >= 0; index++) {
+            float optionY = itemY + (index - first) * step;
             String option = options.get(index);
             boolean selected = this.setting instanceof ModeSetting mode && mode.is(option)
                     || this.setting instanceof MultiSelectSetting multi && multi.isSelected(option);
@@ -292,6 +393,30 @@ public final class DropdownRow extends SettingRow {
                             this.rowAlpha * progress
                     )
                     .render(Minecraft.getInstance(), null);
+        }
+        Render2DUtil.popScissor();
+        guiGraphicsExtractor.disableScissor();
+
+        if (scrollable()) {
+            int trackX = popupX + popupWidth - Theme.Sizes.DROPDOWN_POPUP_PADDING - SCROLLBAR_WIDTH;
+            float trackY = popupY + Theme.Sizes.DROPDOWN_POPUP_PADDING;
+            float trackHeight = Math.max(1.0F,
+                    popupHeight - Theme.Sizes.DROPDOWN_POPUP_PADDING * 2.0F);
+            int trackHeightPx = Math.max(1, Math.round(sy(trackY + trackHeight) - sy(trackY)));
+            Render2DUtil.rect(sx(trackX), sy(trackY), px(SCROLLBAR_WIDTH), trackHeightPx)
+                    .color(alpha(Theme.Colors.OUTLINES_SMALL, this.rowAlpha * progress * 0.6F))
+                    .radius(px(SCROLLBAR_WIDTH * 0.5F))
+                    .draw();
+            float ratio = trackHeight / Math.max(1.0F, contentHeight());
+            float thumbHeight = Math.max(18.0F, trackHeight * ratio);
+            float maxScroll = maxScroll();
+            float thumbY = trackY + (maxScroll <= 0.0F ? 0.0F
+                    : (this.scrollOffset / maxScroll) * (trackHeight - thumbHeight));
+            int thumbHeightPx = Math.max(1, Math.round(sy(thumbY + thumbHeight) - sy(thumbY)));
+            Render2DUtil.rect(sx(trackX), sy(thumbY), px(SCROLLBAR_WIDTH), thumbHeightPx)
+                    .color(alpha(Theme.Colors.ICON, this.rowAlpha * progress * 0.75F))
+                    .radius(px(SCROLLBAR_WIDTH * 0.5F))
+                    .draw();
         }
     }
 

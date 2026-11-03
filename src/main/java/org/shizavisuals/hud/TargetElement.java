@@ -108,9 +108,8 @@ public final class TargetElement extends HudElement {
         }
 
         // Main Target Card Container
-        Render2DUtil.rect(this.x, cardY, this.width, CARD_HEIGHT * unit)
-                .color(ColorUtil.multiplyAlpha(CARD_BG, alpha))
-                .radius(8.0F * unit)
+        Render2DUtil.surface(this.x, cardY, this.width, CARD_HEIGHT * unit,
+                ColorUtil.multiplyAlpha(CARD_BG, alpha), 8.0F * unit, 32.0F * unit)
                 .draw();
 
         float contentX = this.x + PADDING * unit;

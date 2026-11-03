@@ -4,7 +4,8 @@ public enum UiFontStyle {
     REGULAR(400, 0.0F),
     REGULAR_TRACKED(400, 0.015F),
     MEDIUM(500, 0.015F),
-    SEMIBOLD(600, 0.015F);
+    SEMIBOLD(600, 0.015F),
+    BOLD(700, 0.0F);
 
     private final int weight;
     private final float letterSpacingEm;

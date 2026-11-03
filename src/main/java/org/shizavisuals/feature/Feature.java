@@ -26,7 +26,7 @@ public abstract class Feature {
     @Getter(lombok.AccessLevel.NONE)
     private final Map<String, Setting<?>> settingsByName = new HashMap<>();
 
-    private boolean enabled;
+    private volatile boolean enabled;
     private boolean visible = true;
     private Runnable stateListener = () -> {};
 
