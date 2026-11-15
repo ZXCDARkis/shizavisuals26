@@ -11,10 +11,17 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 @Mixin(Screen.class)
 public class SpatialScreenMixin {
-    @Inject(method = "init()V", at = @At("HEAD"))
-    private void shizavisuals$hookOnShow(CallbackInfo ci) {
+    @Inject(method = "init(II)V", at = @At("HEAD"))
+    private void shizavisuals$hookOnShow(int width, int height, CallbackInfo ci) {
         Screen self = (Screen) (Object) this;
-        if (SpatialInventory.shouldHook(self)) {
+        boolean active = SpatialInventory.isActive();
+        boolean hook = SpatialInventory.shouldHook(self);
+        org.slf4j.LoggerFactory.getLogger("ShizaVisuals-Spatial")
+                .info("Screen init: {} level={} active={} hook={}",
+                        self.getClass().getName(),
+                        net.minecraft.client.Minecraft.getInstance().level != null,
+                        active, hook);
+        if (hook) {
             SpatialInventory.hookScreen(self);
         }
     }
