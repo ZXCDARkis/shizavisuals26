@@ -10,6 +10,7 @@ import org.shizavisuals.event.EventTarget;
 import org.shizavisuals.event.events.lifecycle.ClientStartEvent;
 import org.shizavisuals.feature.FeatureManager;
 import org.shizavisuals.feature.impl.visual.HoldMyItemsFeature;
+import org.shizavisuals.feature.impl.visual.HoldMyItemsPunchyFeature;
 import org.shizavisuals.utils.FriendManager;
 import org.shizavisuals.menu.MenuKeyHandler;
 import org.shizavisuals.menu.MenuOverlayRenderHandler;
@@ -98,6 +99,7 @@ public class ShizaVisuals implements ModInitializer {
     public void onClientStart(ClientStartEvent event) {
         AccountSwitcher.applyStartupAccount();
         HoldMyItemsFeature.syncOnClientStart();
+        HoldMyItemsPunchyFeature.syncOnClientStart();
         GuiTexture.prewarm(Textures.all());
     }
 

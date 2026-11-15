@@ -19,6 +19,7 @@ import org.shizavisuals.event.EventManager;
 import org.shizavisuals.event.Events;
 import org.shizavisuals.event.events.render.Render2DEvent;
 import org.shizavisuals.utils.render.gui.Render2DUtil;
+import org.shizavisuals.utils.render.spatial.SpatialInventory;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
@@ -35,6 +36,20 @@ public abstract class HudMixin {
     @Shadow
     @Final
     private Minecraft minecraft;
+
+    @Inject(method = "extractHotbarAndDecorations", at = @At("HEAD"), cancellable = true)
+    private void shizavisuals$hideHotbarForSpatial(GuiGraphicsExtractor guiGraphicsExtractor, DeltaTracker deltaTracker, CallbackInfo ci) {
+        if (SpatialInventory.hasHotbarToHide()) {
+            ci.cancel();
+        }
+    }
+
+    @Inject(method = "extractEffects", at = @At("HEAD"), cancellable = true)
+    private void shizavisuals$hideEffectsForSpatial(GuiGraphicsExtractor guiGraphicsExtractor, DeltaTracker deltaTracker, CallbackInfo ci) {
+        if (SpatialInventory.shouldCapture() || SpatialInventory.isClosing()) {
+            ci.cancel();
+        }
+    }
 
     @Inject(method = "displayScoreboardSidebar", at = @At("HEAD"), cancellable = true)
     private void onDisplayScoreboardSidebar(GuiGraphicsExtractor guiGraphicsExtractor, Objective objective, CallbackInfo ci) {

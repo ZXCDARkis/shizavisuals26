@@ -18,6 +18,7 @@ import net.minecraft.client.renderer.state.gui.GuiItemRenderState;
 import org.shizavisuals.utils.math.FrameClock;
 import org.shizavisuals.utils.render.gui.GuiPipelines;
 import org.shizavisuals.utils.render.gui.GuiBackdrop;
+import org.shizavisuals.utils.render.spatial.SpatialInventory;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
@@ -76,6 +77,13 @@ public abstract class GuiRendererMixin {
             int endIndex,
             Operation<Void> original
     ) {
+        // 3D-инвентарь: изолированный GuiRenderer рисует в свой offscreen-таргет.
+        if (SpatialInventory.isIsolatedGuiRenderer(instance)) {
+            com.mojang.blaze3d.pipeline.RenderTarget isolated = SpatialInventory.isolatedRenderTarget();
+            if (isolated != null) {
+                mainRenderTarget = isolated;
+            }
+        }
         int cursor = startIndex;
         for (int i = 0; i < this.shizavisuals$glassSplits.size(); i++) {
             int split = this.shizavisuals$glassSplits.getInt(i);

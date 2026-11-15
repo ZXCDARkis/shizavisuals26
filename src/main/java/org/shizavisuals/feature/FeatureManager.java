@@ -24,6 +24,7 @@ import org.shizavisuals.feature.impl.visual.CrosshairFeature;
 import org.shizavisuals.feature.impl.visual.FullBrightFeature;
 import org.shizavisuals.feature.impl.visual.HitParticlesFeature;
 import org.shizavisuals.feature.impl.visual.HoldMyItemsFeature;
+import org.shizavisuals.feature.impl.visual.HoldMyItemsPunchyFeature;
 import org.shizavisuals.feature.impl.visual.HudFeature;
 import org.shizavisuals.feature.impl.visual.ItemPhysicsFeature;
 import org.shizavisuals.feature.impl.visual.ItemReplacerFeature;
@@ -41,6 +42,7 @@ import org.shizavisuals.feature.impl.visual.SwingAnimationFeature;
 import org.shizavisuals.feature.impl.visual.TntEffectFeature;
 import org.shizavisuals.feature.impl.visual.SpiritsFeature;
 import org.shizavisuals.feature.impl.visual.PetsFeature;
+import org.shizavisuals.feature.impl.visual.SpatialInventoryFeature;
 import org.shizavisuals.feature.impl.visual.TrajectoriesFeature;
 import org.shizavisuals.feature.impl.visual.ViewModelFeature;
 import org.shizavisuals.feature.impl.visual.WorldTweaksFeature;
@@ -109,6 +111,7 @@ public final class FeatureManager {
                 new ShaderHandsFeature(),
                 new BlockOutlineFeature(),
                 new HoldMyItemsFeature(),
+                new HoldMyItemsPunchyFeature(),
                 new InventoryManagerFeature(),
                 new ItemPhysicsFeature(),
                 new WorldTweaksFeature(),
@@ -124,7 +127,8 @@ public final class FeatureManager {
                 new TntEffectFeature(),
                 new SpiritsFeature(),
                 new PetsFeature(),
-                new ItemReplacerFeature()
+                new ItemReplacerFeature(),
+                new SpatialInventoryFeature()
         ).forEach(this::register);
 
         configStore.load(this);
